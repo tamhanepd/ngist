@@ -6,6 +6,10 @@
 ------------------------------------------------------------------------------------------
 VERSION    DATE          DESCRIPTION
 ------------------------------------------------------------------------------------------
+V7.6.4      2025-11-12 FIXED bug in GAS module that caused MAGPI_gandalf to fail. REMOVED the 
+		       old GIST implementation of Gandalf and replaced it with MAGPI_gandalf.
+		       Now there is only one Gandalf routine for GAS module. 
+  
 V7.6.3	    2025-09-01 FIXED bugs in GAS module when running in SPAXEL and BOTH mode, 
 			where routine failed because all_spectra was not available and final products 
 			were not saved. FIXED bugs in CREATE_HTML and USER module where module == 

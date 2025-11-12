@@ -7,9 +7,10 @@ from astropy.io import fits
 from astropy.table import Table
 from multiprocess import Process, Queue
 from printStatus import printStatus
+import h5py
 
 from ngistPipeline.auxiliary import _auxiliary
-from ngistPipeline.emissionLines.pyGandalf import gandalf_util as gandalf
+from ngistPipeline.emissionLines.Gandalf import gandalf_util as gandalf
 from ngistPipeline.prepareTemplates import _prepareTemplates
 
 # PHYSICAL CONSTANTS
@@ -260,14 +261,14 @@ def save_gandalf(
     # SAVE BESTFIT
     outfits = (
         os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-        + "_gas-bestfit_"
+        + "_gas_bestfit_"
         + currentLevel.lower()
         + ".fits"
     )
     printStatus.running(
         "Writing: "
         + config["GENERAL"]["RUN_ID"]
-        + "_gas-bestfit_"
+        + "_gas_bestfit_"
         + currentLevel.lower()
         + ".fits"
     )
@@ -404,7 +405,7 @@ def save_gandalf(
     printStatus.updateDone(
         "Writing: "
         + config["GENERAL"]["RUN_ID"]
-        + "_gas-cleaned_"
+        + "_gas_cleaned_"
         + currentLevel.lower()
         + ".fits"
     )
@@ -417,14 +418,14 @@ def save_gandalf(
     ):
         outfits = (
             os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_gas-weights_"
+            + "_gas_weights_"
             + currentLevel.lower()
             + ".fits"
         )
         printStatus.running(
             "Writing: "
             + config["GENERAL"]["RUN_ID"]
-            + "_gas-weights_"
+            + "_gas_weights_"
             + currentLevel.lower()
             + ".fits"
         )
@@ -463,7 +464,7 @@ def save_gandalf(
         printStatus.updateDone(
             "Writing: "
             + config["GENERAL"]["RUN_ID"]
-            + "_gas-weights_"
+            + "_gas_weights_"
             + currentLevel.lower()
             + ".fits"
         )
@@ -602,14 +603,6 @@ def performEmissionLineAnalysis(config):
     fit, emission-subtracted spectral are calculated. Results are saved to disk.
     """
 
-    #    # Check if the error estimation in pyGandalf is turned off
-    #    if config['GAS']['ERRORS'] != 0:
-    #        printStatus.warning("It is currently not possible to derive errors with pyGandALF in a Python3 environment. An updated version of pyGandALF will be released soon.")
-    #        printStatus.warning("The emission-line analysis continues without an error estimation.")
-    #        logging.warning("It is currently not possible to derive errors with pyGandALF in a Python3 environment. An updated version of pyGandALF will be released soon.")
-    #        logging.warning("The emission-line analysis continues without an error estimation.")
-    #        config['GAS']['ERRORS'] = 0
-
     # Check if proper configuration is set
     if config["GAS"]["LEVEL"] not in ["BIN", "SPAXEL", "BOTH"]:
         message = "Configuration parameter GAS|SPAXEL has to be either 'BIN', 'SPAXEL', or 'BOTH'."
@@ -624,7 +617,7 @@ def performEmissionLineAnalysis(config):
         config["GAS"]["LEVEL"] == "BOTH"
         and os.path.isfile(
             os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_gas_BIN.fits"
+            + "_gas_bin.fits"
         )
         == False
     ):
@@ -633,7 +626,7 @@ def performEmissionLineAnalysis(config):
         config["GAS"]["LEVEL"] == "BOTH"
         and os.path.isfile(
             os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_gas_BIN.fits"
+            + "_gas_bin.fits"
         )
         == True
     ):
@@ -647,13 +640,23 @@ def performEmissionLineAnalysis(config):
 
     # Read data if we run on BIN level
     if currentLevel == "BIN":
-        # Read spectra from file
-        hdu = fits.open(
-            os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_bin_spectra.fits"
-        )
-        spectra = np.array(hdu[1].data.SPEC.T)
-        logLam_galaxy = np.array(hdu[2].data.LOGLAM)
+    # Read spectra
+        hdf5_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_bin_spectra.hdf5"
+        fits_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_bin_spectra.fits"
+
+        if os.path.isfile(hdf5_file):
+            with h5py.File(hdf5_file, 'r') as f:
+                spectra = f['SPEC'][:]
+                logLam_galaxy = f['LOGLAM'][:]
+                error = f['ESPEC'][:]
+                velscale = f.attrs["VELSCALE"]
+        else:
+            print(hdf5_file + " does not exist. Trying " + fits_file)
+            spectra = np.array(fits.open(fits_file)[1].data.SPEC.T)
+            error = np.array(fits.open(fits_file)[1].data.ESPEC.T)
+            logLam_galaxy = np.array(fits.open(fits_file)[2].data.LOGLAM)
+            velscale = hdu[0].header["VELSCALE"]
+
         idx_lam = np.where(
             np.logical_and(
                 np.exp(logLam_galaxy) > config["GAS"]["LMIN"],
@@ -661,10 +664,10 @@ def performEmissionLineAnalysis(config):
             )
         )[0]
         spectra = spectra[idx_lam, :]
+        error = error[idx_lam, :]  # AJB added
         logLam_galaxy = logLam_galaxy[idx_lam]
         npix = spectra.shape[0]
         nbins = spectra.shape[1]
-        velscale = hdu[0].header["VELSCALE"]
 
         # Create empty mask in bin-level run: There are no masked bins, only masked spaxels!
         maskedSpaxel = np.zeros(nbins, dtype=bool)
@@ -691,7 +694,7 @@ def performEmissionLineAnalysis(config):
         templates = templates.reshape((templates.shape[0], n_templates))
 
         offset = (logLam_template[0] - logLam_galaxy[0]) * C  # km/s
-        error = np.ones((npix, nbins))
+        # error        = np.ones((npix,nbins))
 
         # Read stellar kinematics from file
         ppxf = fits.open(
@@ -705,17 +708,29 @@ def performEmissionLineAnalysis(config):
         stellar_kin[:, 3] = np.array(ppxf.H4)
 
         # Rename to keep the code clean
-        for_errors = config["GAS"]["ERRORS"]
+        # for_errors = config['GAS']['ERRORS']
+        for_errors = 0  # JTM - hard-coded to not run uncertainties on bin fits
 
     # Read data if we run on SPAXEL level
-    elif currentLevel == "SPAXEL":
-        # Read spectra from file
-        hdu = fits.open(
-            os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_all_spectra.fits"
-        )
-        spectra = np.array(hdu[1].data.SPEC.T)
-        logLam_galaxy = np.array(hdu[2].data.LOGLAM)
+    elif currentLevel == "SPAXEL":    
+        # Read spectra
+        hdf5_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_all_spectra.hdf5"
+        fits_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_all_spectra.fits"
+
+        if os.path.isfile(hdf5_file):
+            with h5py.File(hdf5_file, 'r') as f:
+                spectra = f['SPEC'][:]
+                logLam_galaxy = f['LOGLAM'][:]
+                error = f['ESPEC'][:]
+                velscale = f.attrs["VELSCALE"]
+        else:
+            print(hdf5_file + " does not exist. Trying " + fits_file)
+            spectra = np.array(fits.open(fits_file)[1].data.SPEC.T)
+            error = np.array(fits.open(fits_file)[1].data.ESPEC.T)
+            logLam_galaxy = np.array(fits.open(fits_file)[2].data.LOGLAM)
+            velscale = hdu[0].header["VELSCALE"]
+            ##
+
         idx_lam = np.where(
             np.logical_and(
                 np.exp(logLam_galaxy) > config["GAS"]["LMIN"],
@@ -723,10 +738,11 @@ def performEmissionLineAnalysis(config):
             )
         )[0]
         spectra = spectra[idx_lam, :]
+        error = error[idx_lam, :]  # AJB added
         logLam_galaxy = logLam_galaxy[idx_lam]
         npix = spectra.shape[0]
         nbins = spectra.shape[1]
-        velscale = hdu[0].header["VELSCALE"]
+
 
         # Construct mask for defunct spaxels
         mask = fits.open(
@@ -768,7 +784,7 @@ def performEmissionLineAnalysis(config):
             n_templates = 1
             printStatus.done("Preparing the stellar population templates")
         offset = (logLam_template[0] - logLam_galaxy[0]) * C  # km/s
-        error = np.ones((npix, nbins))
+        # error       = np.ones((npix,nbins))
 
         # Read stellar kinematics from file
         ppxf = fits.open(
