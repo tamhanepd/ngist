@@ -7,6 +7,7 @@ from astropy.io import fits
 from astropy.table import Table
 from multiprocess import Process, Queue
 from printStatus import printStatus
+import h5py
 
 from ngistPipeline.auxiliary import _auxiliary
 from ngistPipeline.emissionLines.magpiGandalf import gandalf_util as gandalf
@@ -640,13 +641,30 @@ def performEmissionLineAnalysis(config):
     # Read data if we run on BIN level
     if currentLevel == "BIN":
         # Read spectra from file
-        hdu = fits.open(
-            os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_bin_spectra.fits"
-        )
-        spectra = np.array(hdu[1].data.SPEC.T)
-        error = np.array(hdu[1].data.ESPEC.T)
-        logLam_galaxy = np.array(hdu[2].data.LOGLAM)
+    # Read spectra
+        hdf5_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_bin_spectra.hdf5"
+        fits_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_bin_spectra.fits"
+
+        if os.path.isfile(hdf5_file):
+            with h5py.File(hdf5_file, 'r') as f:
+                spectra = f['SPEC'][:]
+                logLam_galaxy = f['LOGLAM'][:]
+                error = f['ESPEC'][:]
+                velscale = f.attrs["VELSCALE"]
+        else:
+            print(hdf5_file + " does not exist. Trying " + fits_file)
+            spectra = np.array(fits.open(fits_file)[1].data.SPEC.T)
+            error = np.array(fits.open(fits_file)[1].data.ESPEC.T)
+            logLam_galaxy = np.array(fits.open(fits_file)[2].data.LOGLAM)
+            velscale = hdu[0].header["VELSCALE"]
+            ##
+        # hdu = fits.open(
+        #     os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
+        #     + "_bin_spectra.fits"
+        # )
+        # spectra = np.array(hdu[1].data.SPEC.T)
+        # error = np.array(hdu[1].data.ESPEC.T)
+        # logLam_galaxy = np.array(hdu[2].data.LOGLAM)
         idx_lam = np.where(
             np.logical_and(
                 np.exp(logLam_galaxy) > config["GAS"]["LMIN"],
@@ -658,7 +676,6 @@ def performEmissionLineAnalysis(config):
         logLam_galaxy = logLam_galaxy[idx_lam]
         npix = spectra.shape[0]
         nbins = spectra.shape[1]
-        velscale = hdu[0].header["VELSCALE"]
 
         # Create empty mask in bin-level run: There are no masked bins, only masked spaxels!
         maskedSpaxel = np.zeros(nbins, dtype=bool)
@@ -703,15 +720,35 @@ def performEmissionLineAnalysis(config):
         for_errors = 0  # JTM - hard-coded to not run uncertainties on bin fits
 
     # Read data if we run on SPAXEL level
-    elif currentLevel == "SPAXEL":
+    elif currentLevel == "SPAXEL":    
+        # Read spectra
+        hdf5_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_all_spectra.hdf5"
+        fits_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_all_spectra.fits"
         # Read spectra from file
-        hdu = fits.open(
-            os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_all_spectra.fits"
-        )
-        spectra = np.array(hdu[1].data.SPEC.T)
-        error = np.sqrt(np.array(hdu[1].data.ESPEC.T))
-        logLam_galaxy = np.array(hdu[2].data.LOGLAM)
+        # hdu = fits.open(
+        #     os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
+        #     + "_all_spectra.fits"
+        # )
+        if os.path.isfile(hdf5_file):
+            with h5py.File(hdf5_file, 'r') as f:
+                spectra = f['SPEC'][:]
+                logLam_galaxy = f['LOGLAM'][:]
+                error = f['ESPEC'][:]
+                velscale = f.attrs["VELSCALE"]
+        else:
+            print(hdf5_file + " does not exist. Trying " + fits_file)
+            spectra = np.array(fits.open(fits_file)[1].data.SPEC.T)
+            error = np.array(fits.open(fits_file)[1].data.ESPEC.T)
+            logLam_galaxy = np.array(fits.open(fits_file)[2].data.LOGLAM)
+            velscale = hdu[0].header["VELSCALE"]
+            ##
+        # hdu = fits.open(
+        #     os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
+        #     + "_bin_spectra.fits"
+        # )
+        # spectra = np.array(hdu[1].data.SPEC.T)
+        # error = np.array(hdu[1].data.ESPEC.T)
+        # logLam_galaxy = np.array(hdu[2].data.LOGLAM)
         idx_lam = np.where(
             np.logical_and(
                 np.exp(logLam_galaxy) > config["GAS"]["LMIN"],
@@ -723,7 +760,7 @@ def performEmissionLineAnalysis(config):
         logLam_galaxy = logLam_galaxy[idx_lam]
         npix = spectra.shape[0]
         nbins = spectra.shape[1]
-        velscale = hdu[0].header["VELSCALE"]
+
 
         # Construct mask for defunct spaxels
         mask = fits.open(
