@@ -640,7 +640,6 @@ def performEmissionLineAnalysis(config):
 
     # Read data if we run on BIN level
     if currentLevel == "BIN":
-        # Read spectra from file
     # Read spectra
         hdf5_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_bin_spectra.hdf5"
         fits_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_bin_spectra.fits"
@@ -657,14 +656,7 @@ def performEmissionLineAnalysis(config):
             error = np.array(fits.open(fits_file)[1].data.ESPEC.T)
             logLam_galaxy = np.array(fits.open(fits_file)[2].data.LOGLAM)
             velscale = hdu[0].header["VELSCALE"]
-            ##
-        # hdu = fits.open(
-        #     os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-        #     + "_bin_spectra.fits"
-        # )
-        # spectra = np.array(hdu[1].data.SPEC.T)
-        # error = np.array(hdu[1].data.ESPEC.T)
-        # logLam_galaxy = np.array(hdu[2].data.LOGLAM)
+
         idx_lam = np.where(
             np.logical_and(
                 np.exp(logLam_galaxy) > config["GAS"]["LMIN"],
@@ -724,11 +716,7 @@ def performEmissionLineAnalysis(config):
         # Read spectra
         hdf5_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_all_spectra.hdf5"
         fits_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_all_spectra.fits"
-        # Read spectra from file
-        # hdu = fits.open(
-        #     os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-        #     + "_all_spectra.fits"
-        # )
+
         if os.path.isfile(hdf5_file):
             with h5py.File(hdf5_file, 'r') as f:
                 spectra = f['SPEC'][:]
@@ -742,13 +730,7 @@ def performEmissionLineAnalysis(config):
             logLam_galaxy = np.array(fits.open(fits_file)[2].data.LOGLAM)
             velscale = hdu[0].header["VELSCALE"]
             ##
-        # hdu = fits.open(
-        #     os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-        #     + "_bin_spectra.fits"
-        # )
-        # spectra = np.array(hdu[1].data.SPEC.T)
-        # error = np.array(hdu[1].data.ESPEC.T)
-        # logLam_galaxy = np.array(hdu[2].data.LOGLAM)
+
         idx_lam = np.where(
             np.logical_and(
                 np.exp(logLam_galaxy) > config["GAS"]["LMIN"],
