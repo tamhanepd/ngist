@@ -54,12 +54,62 @@ def getLSF(config, module_used):
     LSF = np.genfromtxt(lsfDataFile, comments="#")
     LSF[:, 0] = LSF[:, 0] / (1 + config["GENERAL"]["REDSHIFT"])
     LSF[:, 1] = LSF[:, 1] / (1 + config["GENERAL"]["REDSHIFT"])
-    LSF[LSF[:, 1] / (1 + config["GENERAL"]["REDSHIFT"]) < 2.51, 1] = 2.54 * (
-        1 + config["GENERAL"]["REDSHIFT"]
+    LSF[LSF[:, 1] / (1 + config["GENERAL"]["REDSHIFT"]) < 2.51, 1] = 2.54 * ( 
+       1 + config["GENERAL"]["REDSHIFT"]
     )
     LSF_Data = interp1d(LSF[:, 0], LSF[:, 1], "linear", fill_value="extrapolate")
     LSF = np.genfromtxt(lsfTempFile, comments="#")
     LSF_Templates = interp1d(LSF[:, 0], LSF[:, 1], "linear", fill_value="extrapolate")
+
+    return (LSF_Data, LSF_Templates)
+
+def getmangaLSF(config, module_used, lsf_dat, wave_dat): 
+    """
+    Function only for MaNGA, taking into account the spatially-varying LSF
+    Function to read the given LSF's from file.
+    Added option of module = 'KIN', 'CONT', 'GAS', 'SFH', 'LS', or 'UMOD'
+    to account for differing template sets for the same run
+    For MaNGA, lsf_dat is actually the Gaussian 1sigma and NOT the FWHM!
+    """
+    # Read LSF of observation and templates and construct an interpolation function
+    lsfDataFile = os.path.join(
+        config["GENERAL"]["CONFIG_DIR"], config["GENERAL"]["LSF_DATA"]
+    )
+    if module_used == "KIN":
+        lsfTempFile = os.path.join(
+            config["GENERAL"]["CONFIG_DIR"], config["KIN"]["LSF_TEMP"]
+        )        
+    elif module_used == "CONT":
+        lsfTempFile = os.path.join(
+            config["GENERAL"]["CONFIG_DIR"], config["CONT"]["LSF_TEMP"]
+        )
+    elif module_used == "GAS":
+        lsfTempFile = os.path.join(
+            config["GENERAL"]["CONFIG_DIR"], config["GAS"]["LSF_TEMP"]
+        )
+    elif module_used == "SFH":
+        lsfTempFile = os.path.join(
+            config["GENERAL"]["CONFIG_DIR"], config["SFH"]["LSF_TEMP"]
+        )
+    elif module_used == "LS":
+        lsfTempFile = os.path.join(
+            config["GENERAL"]["CONFIG_DIR"], config["LS"]["LSF_TEMP"]
+        )
+    if module_used == "UMOD":
+        lsfTempFile = os.path.join(
+            config["GENERAL"]["CONFIG_DIR"], config["UMOD"]["LSF_TEMP"]
+        )    
+    LSF = np.array([wave_dat, lsf_dat*2.355]).T # Read in the LSF and wavelngth for that bin. The 2.355 is ~2*sqrt(2*ln(2)), to convert from 1 sigma disp to a FWHM
+
+    LSF[:, 0] = LSF[:, 0] / (1 + config["GENERAL"]["REDSHIFT"]) #De-redshifting the LSF...
+    LSF[:, 1] = LSF[:, 1] / (1 + config["GENERAL"]["REDSHIFT"])
+    LSF[LSF[:, 1] / (1 + config["GENERAL"]["REDSHIFT"]) < 2.51, 1] = 2.54 * ( 
+        1 + config["GENERAL"]["REDSHIFT"]                                    
+    )
+    LSF_Data = interp1d(LSF[:, 0], LSF[:, 1], "linear", fill_value="extrapolate") 
+    LSF = np.genfromtxt(lsfTempFile, comments="#")
+    LSF_Templates = interp1d(LSF[:, 0], LSF[:, 1], "linear", fill_value="extrapolate")
+
     return (LSF_Data, LSF_Templates)
 
 
