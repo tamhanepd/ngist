@@ -99,7 +99,7 @@ GAS :
   FIXED : True
   MOM : 2
   EBmV : null # As opposed to None
-  EMI_FILE : 'emissionLinesPHANGS.config'
+  EMI_FILE : 'emissionLines_ppxf.config'
   LSF_TEMP : 'lsf_MILES' # Path of the file specifying the line-spread-function of the spectral templates. The specified path is relative to the configDir path in defaultDir.
   TEMPLATE_SET : 'miles'
   LIBRARY : 'MILES_EMLINES/'
@@ -114,7 +114,7 @@ SFH :
   SPEC_EMICLEAN : True 
   MOM : 4
   MDEG : 4
-  REGUL_ERR : 1.
+  REGUL : 1.
   NOISE : 1.
   FIXED : True
   MC_PPXF : 0 # Added to add the option of running MC on the SFH module

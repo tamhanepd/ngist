@@ -34,13 +34,24 @@ def spatialBinning_Module(config, cube):
 
     # Import the chosen spatialBinning routine
     try:
-        spec = importlib.util.spec_from_file_location(
-            "",
-            os.path.dirname(os.path.realpath(__file__))
-            + "/"
-            + config["SPATIAL_BINNING"]["METHOD"]
-            + ".py",
-        )
+        if config["READ_DATA"]["DEBUG"] is not False:
+            print
+            spec = importlib.util.spec_from_file_location(
+                "",
+                os.path.dirname(os.path.realpath(__file__))
+                + "/"
+                + 'spaxel'
+                + ".py",
+            )
+        else:
+            spec = importlib.util.spec_from_file_location(
+                "",
+                os.path.dirname(os.path.realpath(__file__))
+                + "/"
+                + config["SPATIAL_BINNING"]["METHOD"]
+                + ".py",
+            )
+
         logging.info(
             "Using the spatial binning routine for "
             + config["SPATIAL_BINNING"]["METHOD"]
