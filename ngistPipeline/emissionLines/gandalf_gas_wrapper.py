@@ -539,6 +539,14 @@ def getGoodpixelsEmissionSetup(
        fits
     """
     # Read in emission-line setup file
+
+    # check that the right file is read
+    if (config["GAS"]["EMI_FILE"] != 'emissionLines_gandalf.config') and (config["GAS"]["EMI_FILE"] != 'emissionLines.config'):
+        logging.info("Unexpected file name for emission line config file")
+        printStatus.warning(
+            "Unexpected file name for emission line config file"
+        )
+
     eml_file = os.path.join(config["GENERAL"]["CONFIG_DIR"], config["GAS"]["EMI_FILE"])
     eml_i = np.genfromtxt(eml_file, dtype="int", usecols=(0), comments="#")
     eml_name = np.genfromtxt(eml_file, dtype="str", usecols=(1), comments="#")
@@ -828,19 +836,6 @@ def performEmissionLineAnalysis(config):
         np.array(LSF_Data(np.exp(logLam_galaxy))) / 2.355 / np.exp(logLam_galaxy)
     )
 
-    # Deredden the spectra for the Galactic extinction in the direction of the target
-    if config["GAS"]["EBmV"] != None:
-        dereddening_attenuation = gandalf.dust_calzetti(
-            logLam_galaxy[0],
-            logLam_galaxy[1] - logLam_galaxy[0],
-            npix,
-            -1 * config["GAS"]["EBmV"],
-            0.0,
-            0,
-        )
-        for i in range(spectra.shape[1]):
-            spectra[:, i] = spectra[:, i] * dereddening_attenuation
-
     # Get goodpixels and emission_setup
     goodpixels, emission_setup = getGoodpixelsEmissionSetup(
         config, 0.0, velscale, logLam_galaxy, logLam_template, npix
@@ -852,15 +847,22 @@ def performEmissionLineAnalysis(config):
         if emission_setup[itm].action == "f" and emission_setup[itm].kind == "l":
             nlines += 1
 
-    if config["GAS"]["REDDENING"] == False:
+    gas_cfg = config["GAS"]
+    # check for new DUST_CORR and old REDDENING keyword
+    dust_corr = gas_cfg.get(
+        "DUST_CORR",
+        gas_cfg.get("REDDENING", False)
+    )
+
+    if dust_corr == False:
         reddening = None
         mdegree = config["GAS"]["MDEG"]
         reddening_length_sol = config["GAS"]["MDEG"]
         reddening_length_esol = 0
     else:
         reddening = [
-            float(config["GAS"]["REDDENING"].split(",")[0].strip()),
-            float(config["GAS"]["REDDENING"].split(",")[1].strip()),
+            float(dust_corr.split(",")[0].strip()),
+            float(dust_corr.split(",")[1].strip()),
         ]
         mdegree = 0
         reddening_length_sol = 2

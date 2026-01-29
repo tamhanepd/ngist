@@ -573,6 +573,14 @@ def createContinuumCube(config):
     ]
     templates = templates.reshape((templates.shape[0], ntemplates))
 
+    # check that template wavelength is larger than requested fit range otherwise stop
+    if (lamRange_spmod[0] >= config["CONT"]["LMIN"]) or (lamRange_spmod[1] <= config["CONT"]["LMAX"]):
+        logging.info("Template wavelength range needs to be larger than fitting range, exiting")
+        printStatus.warning(
+            "Template wavelength range needs to be larger than fitting range, exiting"
+        )
+        return
+
     # Last preparatory steps
     offset = (logLam_template[0] - logLam[0]) * C
 

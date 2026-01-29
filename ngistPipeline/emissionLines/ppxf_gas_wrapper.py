@@ -638,6 +638,14 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         ]
         star_templates = templates.reshape((templates.shape[0], n_templates))
 
+        # check that template wavelength is larger than requested fit range otherwise stop
+        if (lamRange_spmod[0] >= config["GAS"]["LMIN"]) or (lamRange_spmod[1] <= config["GAS"]["LMAX"]):
+            logging.info("Template wavelength range needs to be larger than fitting range, exiting")
+            printStatus.warning(
+                "Template wavelength range needs to be larger than fitting range, exiting"
+            )
+            return
+
         offset = (logLam_template[0] - logLam_galaxy[0]) * C  # km/s
         # error        = np.ones((npix,nbins))
         ## --------------------- ##
@@ -707,9 +715,25 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         ]
         star_templates = templates.reshape((templates.shape[0], n_templates))
 
+        # check that template wavelength is larger than requested fit range otherwise stop
+        if (lamRange_spmod[0] >= config["GAS"]["LMIN"]) or (lamRange_spmod[1] <= config["GAS"]["LMAX"]):
+            logging.info("Template wavelength range needs to be larger than fitting range, exiting")
+            printStatus.warning(
+                "Template wavelength range needs to be larger than fitting range, exiting"
+            )
+            return
+
         offset = (logLam_template[0] - logLam_galaxy[0]) * C  # km/s
 
     # --> generate the gas templates
+
+    # check that the right file is read
+    if (config["GAS"]["EMI_FILE"] != 'emissionLines_ppxf.config') and (config["GAS"]["EMI_FILE"] != 'emissionLinesPHANGS.config'):
+        logging.info("Unexpected file name for emission line config file")
+        printStatus.warning(
+            "Unexpected file name for emission line config file"
+        )
+
     # emldb=table.Table.read('./configFiles/'+config['GAS']['EMI_FILE'] , format='ascii') # Now using the PHANGS emission line config file. NB change '/configFiles' to dirPath or something like that
     emldb = table.Table.read(
         config["GENERAL"]["CONFIG_DIR"] + "/" + config["GAS"]["EMI_FILE"],
