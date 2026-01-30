@@ -172,7 +172,7 @@ def run_ppxf_firsttime(
     offset,
     degree,
     mdeg,
-    regul,
+    regul_err,
     velscale_ratio,
     ncomb,
 ):
@@ -198,7 +198,7 @@ def run_ppxf_firsttime(
         degree=-1,
         vsyst=offset,
         mdegree=mdeg,
-        regul = regul,
+        regul = 1./regul_err,
         velscale_ratio=velscale_ratio,
     )
 
@@ -233,7 +233,7 @@ def run_ppxf(
     offset,
     degree,
     mdeg,
-    regul,
+    regul_err,
     doclean,
     fixed,
     velscale_ratio,
@@ -258,11 +258,8 @@ def run_ppxf(
     ui.adsabs.harvard.edu/?#abs/2017MNRAS.466..798C), in order to determine the
     non-parametric star-formation histories.
     """
-    # printStatus.progressBar(i, nbins, barLength=50)
 
-    dotry=1
-    if dotry==1:
-    #try:
+    try:
         if len(optimal_template_in) > 1:
 
             # Normalise galaxy spectra and noise
@@ -279,6 +276,9 @@ def run_ppxf(
             component_step0 = [0] *  np.prod(optimal_template_in.shape[1:])
             component_true_step0 = np.array(component_step0) == 0
             dust = [{"start": [EBV_init], "bounds": [[0, 8]], "component": component_true_step0}]
+
+            dlog = np.mean(np.diff(logLam))
+            velscale = 299792.458 * dlog   # must be km/s
 
             pp_step0 = ppxf(optimal_template_in, log_bin_data, log_bin_error, velscale, lam=np.exp(logLam), 
                             goodpixels=goodPixels_step0,degree=-1, mdegree=-1, vsyst=offset, 
@@ -404,7 +404,7 @@ def run_ppxf(
                 degree=-1,
                 vsyst=offset,
                 mdegree=mdeg,
-                regul = regul,
+                regul = 1./regul_err,
                 fixed=fixed,
                 lam=np.exp(logLam),
                 velscale_ratio=velscale_ratio,
@@ -488,7 +488,7 @@ def run_ppxf(
                     degree=-1,
                     vsyst=offset,
                     mdegree=mdeg,
-                    regul = 0,
+                    regul = 1./regul_err,
                     fixed=fixed,
                     lam=np.exp(logLam),
                     velscale_ratio=velscale_ratio,
@@ -546,8 +546,7 @@ def run_ppxf(
         )
 
     #except Exception as e:
-    #except:
-    else:
+    except:
         # Handle any other type of exception
         #print(f"An error occurred: {e}")
         mc_results_nan = {
@@ -850,14 +849,6 @@ def extractStarFormationHistories(config):
         sortInGrid=True,
     )
 
-    # check that template wavelength is larger than requested fit range otherwise stop
-    if (lamRange_temp[0] >= config["SFH"]["LMIN"]) or (lamRange_temp[1] <= config["SFH"]["LMAX"]):
-        logging.info("Template wavelength range needs to be larger than fitting range, exiting")
-        printStatus.warning(
-            "Template wavelength range needs to be larger than fitting range, exiting"
-        )
-        return
-
     # Define file paths
     gas_cleaned_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + '_gas_cleaned_'+config["GAS"]["LEVEL"].lower()+'.fits'
     bin_spectra_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_bin_spectra.hdf5"
@@ -953,6 +944,7 @@ def extractStarFormationHistories(config):
                 start[i, :] = np.array([0.0, config["KIN"]["SIGMA"],0.0,0.0,0.0,0.0])
 
     # Define goodpixels
+
     #check if a premask for step zero has been defined
     if 'SPEC_PREMASK' in config["SFH"]:
         #yes, load this premask file
@@ -966,15 +958,6 @@ def extractStarFormationHistories(config):
     # Check if plot keyword is set:
     doplot = config["SFH"].get("PLOT", False)
 
-    # define the regularisation value 
-    sfh_cfg = config["SFH"]
-    if "REGUL" in sfh_cfg:
-        regul = sfh_cfg["REGUL"]
-    elif "REGUL_ERR" in sfh_cfg:
-        regul_err = sfh_cfg["REGUL_ERR"]
-        regul = 0.0 if regul_err == 0 else 1.0 / regul_err
-    else:
-        raise KeyError("Either SFH.REGUL or SFH.REGUL_ERR must be set")
 
     # Define output arrays
     ppxf_result = np.zeros((nbins,6    ))
@@ -1013,10 +996,9 @@ def extractStarFormationHistories(config):
             start[0,:],
             goodPixels_step0_sfh,
             config["SFH"]["MOM"],
-            offset,
-            -1,
+            offset,-1,
             config["SFH"]["MDEG"],
-            regul,
+            config["SFH"]["REGUL_ERR"],
             velscale_ratio,
             ncomb,
         )
@@ -1072,7 +1054,7 @@ def extractStarFormationHistories(config):
                     offset,
                     -1,
                     config["SFH"]["MDEG"],
-                    regul,
+                    config["SFH"]["REGUL_ERR"],
                     config["SFH"]["DOCLEAN"],
                     fixed,
                     velscale_ratio,
@@ -1165,7 +1147,7 @@ def extractStarFormationHistories(config):
                 offset,
                 -1,
                 config["SFH"]["MDEG"],
-                regul,
+                config["SFH"]["REGUL_ERR"],
                 config["SFH"]["DOCLEAN"],
                 fixed,
                 velscale_ratio,

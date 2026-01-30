@@ -13,25 +13,25 @@ def user_Modules(config):
     This function calls user defined routin.
     """
     printStatus.module("user module")
+
+    config_use = config['UMOD']["METHOD"]
+
+    # Check if module is turned off in MasterConfig
+    if config_use == False:
+        message = "The module was turned off."
+        printStatus.warning(message)
+        logging.warning(message)
+        return None
         
     if config['UMOD']["METHOD"] == "twocomp_ppxf":
-
-        config_use = config['UMOD']["METHOD"]
-
-        # Check if module is turned off in MasterConfig
-        if config_use == False:
-            message = "The module was turned off."
-            printStatus.warning(message)
-            logging.warning(message)
-            return None
 
         # Check if outputs are already available
         outPrefix = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])        
         if (
             config["GENERAL"]["OW_OUTPUT"] == False
             and os.path.isfile(outPrefix + "_twocomp_kin.fits") == True
-            and os.path.isfile(outPrefix + "_twocomp_kin-bestfit.fits") == True
-            and os.path.isfile(outPrefix + "_twocomp_kin-optimalTemplates.fits") == True
+            and os.path.isfile(outPrefix + "_twocomp_kin_bestfit.fits") == True
+            and os.path.isfile(outPrefix + "_twocomp_kin_optimal_templates.fits") == True
         ):
             logging.info(
                 "Results of the module are already in the output directory. Module is skipped."

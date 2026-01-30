@@ -1,18 +1,20 @@
-import code
 import logging
 import os
 import time
 
 import h5py
 import numpy as np
+import ppxf as ppxf_package
 from astropy.io import fits
 from astropy.stats import biweight_location
 from joblib import Parallel, delayed, dump, load
+from packaging import version
 from ppxf.ppxf import ppxf
 from printStatus import printStatus
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+#import extinction
 
 from ngistPipeline.auxiliary import _auxiliary
 from ngistPipeline.prepareTemplates import _prepareTemplates
@@ -26,13 +28,11 @@ C = 299792.458  # km/s
 
 """
 PURPOSE:
-  This module creates a continuum and line-only cube.
+  This module executes the analysis of stellar kinematics in the pipeline.
   Basically, it acts as an interface between pipeline and the pPXF routine from
   Cappellari & Emsellem 2004 (ui.adsabs.harvard.edu/?#abs/2004PASP..116..138C;
   ui.adsabs.harvard.edu/?#abs/2017MNRAS.466..798C).
 """
-
-
 
 def plot_ppxf_kin(pp ,x, i,outfig_ppxf, snrCubevar=-99, snrResid=-99, goodpixelsPre=[], norm=False):
     
@@ -99,7 +99,7 @@ def plot_ppxf_kin(pp ,x, i,outfig_ppxf, snrCubevar=-99, snrResid=-99, goodpixels
 
     if nmom == 2:
         plotText = (f"nGIST - Bin {i:10.0f}: Vel = {pp.sol[0]:.0f}, Sig = {pp.sol[1]:.0f}")+\
-        (f", S/N Residual = {snrResid:.1f}")
+                    (f", S/N Residual = {snrResid:.1f}")
     if nmom == 4:
         plotText = (f"nGIST - Bin {i:10.0f}: Vel = {pp.sol[0]:.0f}, Sig = {pp.sol[1]:.0f}, h3 = {pp.sol[2]:.3f}, h4 = {pp.sol[3]:.3f}")+\
                     (f", S/N Residual = {snrResid:.1f}")        
@@ -152,7 +152,6 @@ def robust_sigma(y, zero=False):
 
     return sigma
 
-
 def run_ppxf_firsttime(
     templates,
     log_bin_data,
@@ -190,7 +189,6 @@ def run_ppxf_firsttime(
         mdegree=mdeg,
         velscale_ratio=velscale_ratio,
     )
-
     normalized_weights = pp.weights / np.sum( pp.weights )
     
     optimal_template   = np.zeros((templates.shape[0],1))
@@ -213,6 +211,7 @@ def run_ppxf(
     log_bin_error,
     velscale,
     start,
+    bias,
     goodPixels_step0,
     goodPixels,
     nmoments,
@@ -237,7 +236,6 @@ def run_ppxf(
     ui.adsabs.harvard.edu/?#abs/2017MNRAS.466..798C), in order to determine the
     stellar kinematics.
     """
-    
     try:
         if len(optimal_template_in) > 1:
 
@@ -256,13 +254,15 @@ def run_ppxf(
             component_true_step0 = np.array(component_step0) == 0
             dust = [{"start": [EBV_init], "bounds": [[0, 8]], "component": component_true_step0}]
 
+            dlog = np.mean(np.diff(logLam)) # added for SAMI
+            velscale = 299792.458 * dlog   # must be km/s; added for SAMI
+
             pp_step0 = ppxf(optimal_template_in, log_bin_data, log_bin_error, velscale, lam=np.exp(logLam), 
                             goodpixels=goodPixels_step0,degree=-1, mdegree=-1, vsyst=offset, 
                             velscale_ratio=velscale_ratio,moments=nmoments, start=start, plot=False, 
-                            dust = dust, component = component_step0, regul=0,quiet=True)
-
+                            dust = dust, component = component_step0, regul=0, quiet=True)
             # check which optimal template method is preferred. If default rederive optimal set from step 0
-            if config["CONT"]["OPT_TEMP"] == 'default':
+            if config["KIN"]["OPT_TEMP"] == 'default':
 
                 # find non zero weights from step 0
                 normalized_weights_step0 = pp_step0.weights / np.sum( pp_step0.weights )
@@ -290,7 +290,7 @@ def run_ppxf(
             component_true_step3 = np.array(component_step3) == 0
 
             # apply the dust correction if keyword is set:
-            if config["CONT"]["DUST_CORR"] == True:
+            if config["KIN"]["DUST_CORR"] == True:
                 # old approach --> remove extinction from spectra
                 #log_bin_data_save = log_bin_data
                 #log_bin_data_tmp = extinction.remove(extinction.calzetti00(np.exp(logLam), Av, Rv), log_bin_data)
@@ -332,7 +332,6 @@ def run_ppxf(
                 component=component_step12,
                 dust=dust_step12,
             )
-
             goodPixels_preclip = goodPixels
             # Find a proper estimate of the noise
             noise_orig = biweight_location(log_bin_error[goodPixels_step0])
@@ -365,12 +364,22 @@ def run_ppxf(
             ################ 3 ##################
             # Third Call PPXF - use all templates, get best-fit
 
+            if bias == 'muse_snr_prefit':
+                bias = 0.01584469*snr_prefit**0.54639427 - 0.01687899
+            elif bias == 'muse':
+                # recalculate the snr
+                snr_step2 = np.nanmedian(log_bin_data[goodPixels]/noise_new[goodPixels])
+                bias = 0.01584469*snr_step2**0.54639427 - 0.01687899
+            else:
+                bias = bias
+
             pp = ppxf(
                 templates,
                 log_bin_data,
                 noise_new,
                 velscale,
                 start,
+                bias=bias,
                 mask=mask,
                 plot=False,
                 quiet=True,
@@ -383,7 +392,6 @@ def run_ppxf(
                 component=component_step3,
                 dust=dust_step3,                
             )
-
         # update goodpixels again
         goodPixels = pp.goodpixels
 
@@ -410,17 +418,17 @@ def run_ppxf(
         if doplot == True:
 
             # check if figure  folder exists, otherwise
-            outfigDir = os.path.join(config["GENERAL"]["OUTPUT"],'FigFit_CON')
+            outfigDir = os.path.join(config["GENERAL"]["OUTPUT"],'FigFit_KIN')
             if os.path.exists(outfigDir) == False:
                 printStatus.running('Creating directory for pPXF figures:' + outfigDir)
                 os.mkdir(outfigDir)
                         
             outfigFile_step1 = (
                 os.path.join(outfigDir, config["GENERAL"]["RUN_ID"]
-                                + "_cont_bin_"+str(i)+"_step1.pdf"))
+                                + "_kin_bin_"+str(i)+"_step1.pdf"))
             outfigFile_step3 = (
                 os.path.join(outfigDir, config["GENERAL"]["RUN_ID"]
-                                + "_cont_bin_"+str(i)+"_step3.pdf"))
+                                + "_kin_bin_"+str(i)+"_step3.pdf"))
 
             #produce plots
             tmp_plot1 = plot_ppxf_kin(pp_step1,np.exp(logLam),i,outfigFile_step1,
@@ -463,14 +471,12 @@ def run_ppxf(
             mc_results = np.nanstd(sol_MC, axis=0)
 
         # apply the dust vector to bestfit if keyword set:
-        #if config["CONT"]["DUST_CORR"] == True:
+        #if config["KIN"]["DUST_CORR"] == True:
         #    pp.bestfit = extinction.apply(extinction.calzetti00(np.exp(logLam), Av, Rv), pp.bestfit) * \
         #                 median_log_bin_data_tmp
 
         # add normalisation factor back in main results
         pp.bestfit = pp.bestfit * median_log_bin_data
-        if pp.reddening is not None:
-            pp.reddening = pp.reddening * median_log_bin_data
 
         return(
             pp.sol[:],
@@ -480,45 +486,256 @@ def run_ppxf(
             formal_error,
             spectral_mask,
             snr_postfit,
+            pp.chi2,
             EBV,
         )
-    # we shouldn't use a bare except clause
-    except:
-        return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
 
-def save_ppxf_hdf5(
+    except:
+        return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
+
+
+def save_ppxf(
     config,
+    ppxf_result,
+    mc_results,
+    formal_error,
     ppxf_bestfit,
     logLam,
     goodPixels,
+    optimal_template,
+    logLam_template,
+    npix,
+    spectral_mask,
+    optimal_template_comb,
     bin_data,
+    snr_postfit,
+    red_chi2,
+    EBV,
 ):
     """Saves all results to disk."""
+    # ========================
+    # SAVE RESULTS
+    outfits_ppxf = (
+        os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
+        + "_kin.fits"
+    )
+    printStatus.running("Writing: " + config["GENERAL"]["RUN_ID"] + "_kin.fits")
+
+    # Primary HDU
+    priHDU = fits.PrimaryHDU()
+
+    # Table HDU with PPXF output data
+    cols = []
+    cols.append(fits.Column(name="V", format="D", array=ppxf_result[:, 0]))
+    cols.append(fits.Column(name="SIGMA", format="D", array=ppxf_result[:, 1]))
+    if np.any(ppxf_result[:, 2]) != 0:
+        cols.append(fits.Column(name="H3", format="D", array=ppxf_result[:, 2]))
+    if np.any(ppxf_result[:, 3]) != 0:
+        cols.append(fits.Column(name="H4", format="D", array=ppxf_result[:, 3]))
+    if np.any(ppxf_result[:, 4]) != 0:
+        cols.append(fits.Column(name="H5", format="D", array=ppxf_result[:, 4]))
+    if np.any(ppxf_result[:, 5]) != 0:
+        cols.append(fits.Column(name="H6", format="D", array=ppxf_result[:, 5]))
+
+    if np.any(mc_results[:, 0]) != 0:
+        cols.append(fits.Column(name="ERR_V", format="D", array=mc_results[:, 0]))
+    if np.any(mc_results[:, 1]) != 0:
+        cols.append(fits.Column(name="ERR_SIGMA", format="D", array=mc_results[:, 1]))
+    if np.any(mc_results[:, 2]) != 0:
+        cols.append(fits.Column(name="ERR_H3", format="D", array=mc_results[:, 2]))
+    if np.any(mc_results[:, 3]) != 0:
+        cols.append(fits.Column(name="ERR_H4", format="D", array=mc_results[:, 3]))
+    if np.any(mc_results[:, 4]) != 0:
+        cols.append(fits.Column(name="ERR_H5", format="D", array=mc_results[:, 4]))
+    if np.any(mc_results[:, 5]) != 0:
+        cols.append(fits.Column(name="ERR_H6", format="D", array=mc_results[:, 5]))
+
+    cols.append(fits.Column(name="FORM_ERR_V", format="D", array=formal_error[:, 0]))
+    cols.append(
+        fits.Column(name="FORM_ERR_SIGMA", format="D", array=formal_error[:, 1])
+    )
+    if np.any(formal_error[:, 2]) != 0:
+        cols.append(
+            fits.Column(name="FORM_ERR_H3", format="D", array=formal_error[:, 2])
+        )
+    if np.any(formal_error[:, 3]) != 0:
+        cols.append(
+            fits.Column(name="FORM_ERR_H4", format="D", array=formal_error[:, 3])
+        )
+    if np.any(formal_error[:, 4]) != 0:
+        cols.append(
+            fits.Column(name="FORM_ERR_H5", format="D", array=formal_error[:, 4])
+        )
+    if np.any(formal_error[:, 5]) != 0:
+        cols.append(
+            fits.Column(name="FORM_ERR_H6", format="D", array=formal_error[:, 5])
+        )
+
+    # Add True SNR calculated from residual
+    cols.append(fits.Column(name="SNR_POSTFIT", format="D", array=snr_postfit[:]))
+
+    # Add E(B-V) derived from pPXF 0th step with reddening but no polynomials
+    cols.append(fits.Column(name="RED_CHI2", format="D", array=red_chi2[:]))
+
+    # Add E(B-V) derived from pPXF 0th step with reddening but no polynomials
+    cols.append(fits.Column(name="EBV", format="D", array=EBV[:]))
+
+    dataHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
+    dataHDU.name = "KIN_DATA"
+
+    # Create HDU list and write to file
+    priHDU = _auxiliary.saveConfigToHeader(priHDU, config["KIN"])
+    dataHDU = _auxiliary.saveConfigToHeader(dataHDU, config["KIN"])
+    HDUList = fits.HDUList([priHDU, dataHDU])
+    HDUList.writeto(outfits_ppxf, overwrite=True)
+
+    printStatus.updateDone("Writing: " + config["GENERAL"]["RUN_ID"] + "_kin.fits")
+    logging.info("Wrote: " + outfits_ppxf)
+
+    # ========================
     # SAVE BESTFIT
     outfits_ppxf = (
         os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-        + "_kin_bestfit_cont.hdf5"
+        + "_kin_bestfit.fits"
     )
-    printStatus.running("Writing: " + config["GENERAL"]["RUN_ID"] + "_kin_bestfit_cont.hdf5")
+    printStatus.running("Writing: " + config["GENERAL"]["RUN_ID"] + "_kin_bestfit.fits")
 
-    with h5py.File(outfits_ppxf, "w") as f:
-        # Save PPXF bestfit
-        f.create_dataset("BESTFIT", data=ppxf_bestfit)
+    # Primary HDU
+    priHDU = fits.PrimaryHDU()
 
-        # Save PPXF logLam
-        f.create_dataset("LOGLAM", data=logLam)
+    # Table HDU with PPXF bestfit
+    cols = []
+    cols.append(fits.Column(name="BESTFIT", format=str(npix) + "D", array=ppxf_bestfit))
+    dataHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
+    dataHDU.name = "BESTFIT"
 
-        # Save PPXF goodpixels
-        f.create_dataset("GOODPIX", data=goodPixels)
+    # Table HDU with PPXF logLam
+    cols = []
+    cols.append(fits.Column(name="LOGLAM", format="D", array=logLam))
+    logLamHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
+    logLamHDU.name = "LOGLAM"
 
-        # Save SPEC data
-        f.create_dataset("SPEC", data=bin_data.T)
+    # Table HDU with PPXF goodpixels
+    cols = []
+    cols.append(fits.Column(name="GOODPIX", format="J", array=goodPixels))
+    goodpixHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
+    goodpixHDU.name = "GOODPIX"
 
-    printStatus.running("Writing complete: " + config["GENERAL"]["RUN_ID"] + "_kin_bestfit_cont.hdf5")
+    # Table HDU with ??? --> unclear what this is?
+    cols = []
+    cols.append(fits.Column(name="SPEC", format=str(npix) + "D", array=bin_data.T))
+    specHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
+    specHDU.name = "SPEC"
+
+    # Create HDU list and write to file
+    priHDU = _auxiliary.saveConfigToHeader(priHDU, config["KIN"])
+    dataHDU = _auxiliary.saveConfigToHeader(dataHDU, config["KIN"])
+    logLamHDU = _auxiliary.saveConfigToHeader(logLamHDU, config["KIN"])
+    goodpixHDU = _auxiliary.saveConfigToHeader(goodpixHDU, config["KIN"])
+    specHDU = _auxiliary.saveConfigToHeader(specHDU, config["KIN"])
+
+    HDUList = fits.HDUList([priHDU, dataHDU, logLamHDU, goodpixHDU, specHDU])
+    HDUList.writeto(outfits_ppxf, overwrite=True)
+
+    printStatus.updateDone(
+        "Writing: " + config["GENERAL"]["RUN_ID"] + "_kin_bestfit.fits"
+    )
     logging.info("Wrote: " + outfits_ppxf)
-    
-    
-def createContinuumCube(config):
+
+    # ============================
+    # SAVE OPTIMAL TEMPLATE RESULT
+    outfits = (
+        os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
+        + "_kin_optimal_templates.fits"
+    )
+    printStatus.running(
+        "Writing: " + config["GENERAL"]["RUN_ID"] + "_kin_optimal_templates.fits"
+    )
+
+    # Primary HDU
+    priHDU = fits.PrimaryHDU()
+
+    # Extension 1: Table HDU with optimal templates
+    cols = []
+    cols.append(
+        fits.Column(
+            name="OPTIMAL_TEMPLATES",
+            format=str(optimal_template.shape[1]) + "D",
+            array=optimal_template,
+        )
+    )
+    dataHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
+    dataHDU.name = "OPTIMAL_TEMPLATES"
+
+    # Extension 2: Table HDU with logLam_templates
+    cols = []
+    cols.append(fits.Column(name="LOGLAM_TEMPLATE", format="D", array=logLam_template))
+    logLamHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
+    logLamHDU.name = "LOGLAM_TEMPLATE"
+
+    # Extension 2: Table HDU with logLam_templates
+    cols = []
+    cols.append(
+        fits.Column(
+            name="OPTIMAL_TEMPLATE_ALL", 
+            format=str(optimal_template_comb.shape[1]) + "D",
+            array=optimal_template_comb
+        )
+    )
+    combHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
+    combHDU.name = "OPTIMAL_TEMPLATE_ALL"
+
+    # Create HDU list and write to file
+    priHDU = _auxiliary.saveConfigToHeader(priHDU, config["KIN"])
+    dataHDU = _auxiliary.saveConfigToHeader(dataHDU, config["KIN"])
+    logLamHDU = _auxiliary.saveConfigToHeader(logLamHDU, config["KIN"])
+    combHDU = _auxiliary.saveConfigToHeader(combHDU, config["KIN"])
+    HDUList = fits.HDUList([priHDU, dataHDU, logLamHDU, combHDU])
+    HDUList.writeto(outfits, overwrite=True)
+
+    printStatus.updateDone(
+        "Writing: " + config["GENERAL"]["RUN_ID"] + "_kin_optimal_templates.fits"
+    )
+    logging.info("Wrote: " + outfits)
+
+    # ============================
+    # SAVE SPECTRAL MASK RESULT
+    outfits = (
+        os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
+        + "_kin_spectral_mask.fits"
+    )
+    printStatus.running(
+        "Writing: " + config["GENERAL"]["RUN_ID"] + "_kin_spectral_mask.fits"
+    )
+
+    # Primary HDU
+    priHDU = fits.PrimaryHDU()
+
+    # Extension 1: Table HDU with optimal templates
+    cols = []
+    cols.append(
+        fits.Column(
+            name="SPECTRAL_MASK",
+            format=str(spectral_mask.shape[1]) + "D",
+            array=spectral_mask,
+        )
+    )
+    dataHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
+    dataHDU.name = "SPECTRAL_MASK"
+
+    # Create HDU list and write to file
+    priHDU = _auxiliary.saveConfigToHeader(priHDU, config["KIN"])
+    dataHDU = _auxiliary.saveConfigToHeader(dataHDU, config["KIN"])
+    HDUList = fits.HDUList([priHDU, dataHDU])
+    HDUList.writeto(outfits, overwrite=True)
+
+    printStatus.updateDone(
+        "Writing: " + config["GENERAL"]["RUN_ID"] + "_kin_spectral_mask.fits"
+    )
+    logging.info("Wrote: " + outfits)
+
+
+def extractStellarKinematics(config):
     """
     Perform the measurement of stellar kinematics, using the pPXF routine. This
     function basically read all necessary input data, hands it to pPXF, and
@@ -535,22 +752,36 @@ def createContinuumCube(config):
         logLam = f["LOGLAM"][:]
         idx_lam = np.where(
         np.logical_and(
-            np.exp(logLam) > config["CONT"]["LMIN"],
-            np.exp(logLam) < config["CONT"]["LMAX"],
+            np.exp(logLam) > config["KIN"]["LMIN"],
+            np.exp(logLam) < config["KIN"]["LMAX"],
         )
         )[0]
 
         bin_data = f["SPEC"][:][idx_lam, :]
         bin_err = f["ESPEC"][:][idx_lam, :]
         velscale = f.attrs["VELSCALE"]
+    
     logLam = logLam[idx_lam]
     npix = bin_data.shape[0]
     nbins = bin_data.shape[1]
     ubins = np.arange(0, nbins)
 
+    # Define bias value (even if moments == 2, because keyword needs to be passed on)
+    if config["KIN"]["BIAS"] == 'Auto': # 'Auto' setting: bias=None
+        bias = None
+    elif config["KIN"]["BIAS"] != 'Auto':
+        bias = config["KIN"]["BIAS"]
+
+    # Test if bias is either a None or a float
+    if (bias != None) & (bias != 'muse') & (bias != 'muse_snr_prefit') & \
+        (isinstance(bias, int) == False) & (isinstance(bias, float) == False):
+        printStatus.warning("Wrong Bias keyword, setting to None")
+        bias = None
+
+
     # Read LSF information
 
-    LSF_Data, LSF_Templates = _auxiliary.getLSF(config, "CONT")  # added input of module
+    LSF_Data, LSF_Templates = _auxiliary.getLSF(config, "KIN")  # added input of module
 
     # Prepare templates
     velscale_ratio = 2
@@ -562,36 +793,30 @@ def createContinuumCube(config):
         ntemplates,
     ) = _prepareTemplates.prepareTemplates_Module(
         config,
-        config["CONT"]["LMIN"],
-        config["CONT"]["LMAX"],
+        config["KIN"]["LMIN"],
+        config["KIN"]["LMAX"],
         velscale / velscale_ratio,
         LSF_Data,
         LSF_Templates,
-        "CONT",
+        "KIN",
     )[
         :4
     ]
     templates = templates.reshape((templates.shape[0], ntemplates))
 
-    # check that template wavelength is larger than requested fit range otherwise stop
-    if (lamRange_spmod[0] >= config["CONT"]["LMIN"]) or (lamRange_spmod[1] <= config["CONT"]["LMAX"]):
-        logging.info("Template wavelength range needs to be larger than fitting range, exiting")
-        printStatus.warning(
-            "Template wavelength range needs to be larger than fitting range, exiting"
-        )
-        return
-
     # Last preparatory steps
     offset = (logLam_template[0] - logLam[0]) * C
 
     #check what type of noise should be passed on:
-    if config["CONT"]["NOISE"] == 'variance': # use noise from cube 
+    if config["KIN"]["NOISE"] == "variance": # use noise from cube 
         noise = bin_err  # already converted to noise, i.e. sqrt(variance)
-    elif config["CONT"]["NOISE"] == 'constant': # use constant noise
+    elif config["KIN"]["NOISE"] == "constant": # use constant noise
         noise  = np.ones((npix,nbins))
         # while constant, the noise does need to be scaled to match the bin_err
         med_bin_err = np.nanmedian(bin_err, axis=0)
         noise *= med_bin_err
+
+    nsims = config["KIN"]["MC_PPXF"]
 
     # Initial guesses
     start = np.zeros((nbins, 2))
@@ -625,21 +850,21 @@ def createContinuumCube(config):
         )
         logging.info("Using V and SIGMA from the MasterConfig file as initial guesses")
         start[:, 0] = 0.0
-        start[:, 1] = config["CONT"]["SIGMA"]
+        start[:, 1] = config["KIN"]["SIGMA"]
 
     # Define goodpixels
     #check if a premask for step zero has been defined
-    if 'SPEC_PREMASK' in config["CONT"]:
+    if 'SPEC_PREMASK' in config["KIN"]:
         #yes, load this premask file
-        goodPixels_step0_con = _auxiliary.spectralMasking(config, config["CONT"]["SPEC_PREMASK"], logLam)
+        goodPixels_step0_kin = _auxiliary.spectralMasking(config, config["KIN"]["SPEC_PREMASK"], logLam)
     else:
         #no, load this normal file
-        goodPixels_step0_con = _auxiliary.spectralMasking(config, config["CONT"]["SPEC_MASK"], logLam)
+        goodPixels_step0_kin = _auxiliary.spectralMasking(config, config["KIN"]["SPEC_MASK"], logLam)
     
-    goodPixels_con = _auxiliary.spectralMasking(config, config["CONT"]["SPEC_MASK"], logLam)
+    goodPixels_kin = _auxiliary.spectralMasking(config, config["KIN"]["SPEC_MASK"], logLam)
 
     # Check if plot keyword is set:
-    doplot = config["CONT"].get("PLOT", False)
+    doplot = config["KIN"].get("PLOT", False)
 
     # Array to store results of ppxf
     ppxf_result = np.zeros((nbins, 6))
@@ -649,11 +874,14 @@ def createContinuumCube(config):
     formal_error = np.zeros((nbins, 6))
     spectral_mask = np.zeros((nbins, bin_data.shape[0]))
     snr_postfit = np.zeros(nbins)
+    red_chi2 = np.zeros(nbins)
     EBV = np.zeros(nbins)
-    
-    # ====================
-    # Run PPXF once on combined mean spectrum to get a single optimal template
-    if (config["CONT"]["OPT_TEMP"] == "galaxy_single") or (config["CONT"]["OPT_TEMP"] == "galaxy_set"):
+ 
+# ====================
+    # If OPT_TEMP keyword set to 'galaxy_single' or 'galaxy_set' then
+    # run PPXF once on combined mean spectrum to get a single or optimal template set
+
+    if (config["KIN"]["OPT_TEMP"] == "galaxy_single") or (config["KIN"]["OPT_TEMP"] == "galaxy_set"):
         comb_spec = np.nanmean(bin_data[:,:],axis=1)
         comb_espec = np.nanmean(bin_err[:,:],axis=1)
 
@@ -663,31 +891,32 @@ def createContinuumCube(config):
             comb_espec,
             velscale,
             start[0,:],
-            goodPixels_step0_con,
-            config["CONT"]["MOM"],
+            goodPixels_step0_kin,
+            config["KIN"]["MOM"],
             offset,
-            config["CONT"]["ADEG"],
-            config["CONT"]["MDEG"],
+            config["KIN"]["ADEG"],
+            config["KIN"]["MDEG"],
             velscale_ratio,
         )
 
         # now define the optimal template that we'll use throughout
-        if config["CONT"]["OPT_TEMP"] == 'galaxy_single':
+        if config["KIN"]["OPT_TEMP"] == 'galaxy_single':
             optimal_template_comb = optimal_template_out # single template
-        if config["CONT"]["OPT_TEMP"] == 'galaxy_set':
+        if config["KIN"]["OPT_TEMP"] == 'galaxy_set':
             optimal_template_comb = optimal_template_set # selected set  from total galaxy fit
     else:
         optimal_template_comb = templates # all templates
-
+ 
      # ====================
     EBV_init = 0.1 # PHANGS value initial guess
     # ====================
     # Run PPXF
+
     start_time = time.time()
     if config["GENERAL"]["PARALLEL"] == True:
         printStatus.running("Running PPXF in parallel mode")
         logging.info("Running PPXF in parallel mode")
-
+        
         # Prepare the folder where the memmap will be dumped
         memmap_folder = "/scratch" if os.access("/scratch", os.W_OK) else config["GENERAL"]["OUTPUT"]
 
@@ -704,6 +933,7 @@ def createContinuumCube(config):
         dump(noise, noise_filename_memmap)
         noise = load(noise_filename_memmap, mmap_mode='r')
 
+
         # Define a function to encapsulate the work done in the loop
         def worker(chunk, templates):
             results = []
@@ -714,17 +944,18 @@ def createContinuumCube(config):
                     noise[:, i],
                     velscale,
                     start[i, :],
-                    goodPixels_step0_con,
-                    goodPixels_con,
-                    config["CONT"]["MOM"],
-                    config["CONT"]["ADEG"],
-                    config["CONT"]["MDEG"],
-                    config["CONT"]["DOCLEAN"],
+                    bias,
+                    goodPixels_step0_kin,
+                    goodPixels_kin,
+                    config["KIN"]["MOM"],
+                    config["KIN"]["ADEG"],
+                    config["KIN"]["MDEG"],
+                    config["KIN"]["DOCLEAN"],
                     logLam,
                     offset,
                     velscale_ratio,
                     ntemplates,
-                    0,
+                    nsims,
                     nbins,
                     i,
                     optimal_template_comb,
@@ -734,28 +965,29 @@ def createContinuumCube(config):
                 )
                 results.append(result)
             return results
-        
+
         # Use joblib to parallelize the work
         max_nbytes = "1M" # max array size before memory mapping is triggered
-        chunk_size = max(1, nbins // (config["GENERAL"]["NCPU"] * 10))
+        chunk_size = max(1, nbins // ((config["GENERAL"]["NCPU"]) * 10))
         chunks = [range(i, min(i + chunk_size, nbins)) for i in range(0, nbins, chunk_size)]
         parallel_configs = {"n_jobs": config["GENERAL"]["NCPU"], "max_nbytes": max_nbytes, "temp_folder": memmap_folder, "mmap_mode": "c", "return_as":"generator"}
         ppxf_tmp = list(tqdm(Parallel(**parallel_configs)(delayed(worker)(chunk, templates) for chunk in chunks),
                         total=len(chunks), desc="Processing chunks", ascii=" #", unit="chunk"))
-
         # Flatten the results
         ppxf_tmp = [result for chunk_results in ppxf_tmp for result in chunk_results]
 
+        # Unpack results
         for i in range(0, nbins):
-            ppxf_result[i, : config["CONT"]["MOM"]] = ppxf_tmp[i][0]
+            ppxf_result[i, : config["KIN"]["MOM"]] = ppxf_tmp[i][0]
             ppxf_bestfit[i, :] = ppxf_tmp[i][1]
             optimal_template[i, :] = ppxf_tmp[i][2]
-            mc_results[i, : config["CONT"]["MOM"]] = ppxf_tmp[i][3]
-            formal_error[i, : config["CONT"]["MOM"]] = ppxf_tmp[i][4]
+            mc_results[i, : config["KIN"]["MOM"]] = ppxf_tmp[i][3]
+            formal_error[i, : config["KIN"]["MOM"]] = ppxf_tmp[i][4]
             spectral_mask[i, :] = ppxf_tmp[i][5]
             snr_postfit[i] = ppxf_tmp[i][6]
-            EBV[i] = ppxf_tmp[i][7]
-
+            red_chi2[i] = ppxf_tmp[i][7]
+            EBV[i] = ppxf_tmp[i][8]
+        
         printStatus.updateDone("Running PPXF in parallel mode", progressbar=False)
 
         # Remove the memory-mapped files
@@ -766,24 +998,25 @@ def createContinuumCube(config):
     elif config["GENERAL"]["PARALLEL"] == False:
         printStatus.running("Running PPXF in serial mode")
         logging.info("Running PPXF in serial mode")
-
+        
         # check if we need to run all bins or only a subset
-        if 'DEBUG_BIN' in config["CONT"]:
-            runbin = np.array(config["CONT"]["DEBUG_BIN"])
-            # replace config keyword with string to save it in header later
-            config["CONT"]["DEBUG_BIN"] = str(runbin)
+        if 'DEBUG_BIN' in config["KIN"]:
+            runbin = np.array(config["KIN"]["DEBUG_BIN"])
+            printStatus.running("Running PPXF in Debug mode on bins: "+str(runbin))
         else:
             runbin = np.arange(0, nbins)
-        
+
+
         for i in runbin:
             (
-                ppxf_result[i, : config["CONT"]["MOM"]],
+                ppxf_result[i, : config["KIN"]["MOM"]],
                 ppxf_bestfit[i, :],
                 optimal_template[i, :],
-                mc_results[i, : config["CONT"]["MOM"]],
-                formal_error[i, : config["CONT"]["MOM"]],
+                mc_results[i, : config["KIN"]["MOM"]],
+                formal_error[i, : config["KIN"]["MOM"]],
                 spectral_mask[i, :],
                 snr_postfit[i],
+                red_chi2[i],
                 EBV[i],
             ) = run_ppxf(
                 templates,
@@ -791,17 +1024,18 @@ def createContinuumCube(config):
                 noise[:, i],
                 velscale,
                 start[i, :],
-                goodPixels_step0_con,
-                goodPixels_con,
-                config["CONT"]["MOM"],
-                config["CONT"]["ADEG"],
-                config["CONT"]["MDEG"],
-                config["CONT"]["DOCLEAN"],
+                bias,
+                goodPixels_step0_kin,
+                goodPixels_kin,
+                config["KIN"]["MOM"],
+                config["KIN"]["ADEG"],
+                config["KIN"]["MDEG"],
+                config["KIN"]["DOCLEAN"],
                 logLam,
                 offset,
                 velscale_ratio,
                 ntemplates,
-                0,
+                nsims,
                 nbins,
                 i,
                 optimal_template_comb,
@@ -809,9 +1043,8 @@ def createContinuumCube(config):
                 config,
                 doplot,                
             )
-
+        
         printStatus.updateDone("Running PPXF in serial mode", progressbar=False)
-
 
     print(
         "             Running PPXF on %s spectra took %.2fs using %i cores"
@@ -838,18 +1071,31 @@ def createContinuumCube(config):
         logging.info("There were no problems in the analysis.")
     print("")
 
-    # Save to file
-    if "DEBUG_BIN" in config["CONT"]:
-        # replace config keyword with string to save it in header later
-        config["CONT"]["DEBUG_BIN"] = str(config["CONT"]["DEBUG_BIN"])
 
-    save_ppxf_hdf5(
+    # Save to file
+    if 'DEBUG_BIN' in config["KIN"]:
+        # replace config keyword with string to save it in header later
+        config["KIN"]["DEBUG_BIN"] = str(config["KIN"]["DEBUG_BIN"])
+
+    save_ppxf(
         config,
+        ppxf_result,
+        mc_results,
+        formal_error,
         ppxf_bestfit,
         logLam,
-        goodPixels_con,
+        goodPixels_kin,
+        optimal_template,
+        logLam_template,
+        npix,
+        spectral_mask,
+        optimal_template_comb,
         bin_data,
+        snr_postfit,
+        red_chi2,
+        EBV,
     )
-    
+
     # Return
+
     return None

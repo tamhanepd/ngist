@@ -228,7 +228,7 @@ def save_ls(
     logging.info("Wrote: " + outfits)
 
 
-def saveCleanedLinearSpectra(spec, espec, wave, npix, config):
+def saveCleanedLinearSpectra(spec, espec, lsf, wave, npix, config):
     """Save emission-subtracted, linearly binned spectra to disk."""
     outfits = (
         os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
@@ -245,6 +245,7 @@ def saveCleanedLinearSpectra(spec, espec, wave, npix, config):
     cols = []
     cols.append(fits.Column(name="SPEC", format=str(npix) + "D", array=spec))
     cols.append(fits.Column(name="ESPEC", format=str(npix) + "D", array=espec))
+    cols.append(fits.Column(name="LSF", format=str(npix) + "D", array=lsf))
     dataHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
     dataHDU.name = "CLEANED_SPECTRA"
 
@@ -333,7 +334,9 @@ def measureLineStrengths(config, RESOLUTION="ORIGINAL"):
         MCMC = False
 
     # Read LSF information
-    LSF_Data, LSF_Templates = _auxiliary.getLSF(config, "LS")
+    #LSF_Data, LSF_Templates = _auxiliary.getLSF(config, "LS")
+    #????LSF_Data, LSF_Templates = _auxiliary.getmangaLSF(config, "LS")
+
 
     # Read the log-rebinned spectra and log-unbin them
     if (
@@ -361,8 +364,10 @@ def measureLineStrengths(config, RESOLUTION="ORIGINAL"):
                 os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
                 + "_gas_cleaned_bin.fits"
             )
+            print(hdu_spec[1].data.columns)
             binned_spec_data = hdu_spec[1].data["SPEC"]
             binned_loglam_data = hdu_spec[2].data["LOGLAM"]
+            binned_lsf_data = hdu_spec[1].data["LSF"]# new
         else:
             logging.info(
                 "Using regular spectra without any emission-correction at "
@@ -377,6 +382,8 @@ def measureLineStrengths(config, RESOLUTION="ORIGINAL"):
             ) as f:
                 binned_spec_data = f["SPEC"][:].T
                 binned_loglam_data = f["LOGLAM"][:]
+                binned_lsf_data = f["LSF"][:][:].T # new...should this be [:][:]?
+
         with h5py.File(
             os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
             + "_bin_spectra.hdf5",
@@ -389,6 +396,7 @@ def measureLineStrengths(config, RESOLUTION="ORIGINAL"):
         idx_lamMax = np.where(binned_loglam_data[-1] == binned_eloglam_data)[0]
         idx_lam = np.arange(idx_lamMin, idx_lamMax + 1)
         oldspec = np.array(binned_spec_data)
+        oldlsf = np.array(binned_lsf_data)
         oldespec = np.sqrt(np.array(binned_espec_data)[:, idx_lam])
         wave = np.array(binned_loglam_data)
 
@@ -397,6 +405,7 @@ def measureLineStrengths(config, RESOLUTION="ORIGINAL"):
         lamRange = np.array([wave[0], wave[-1]])
         spec = np.zeros(oldspec.shape)
         espec = np.zeros(oldespec.shape)
+        lsf = np.zeros(oldlsf.shape)
 
         # Rebin the cleaned spectra from log to lin
         printStatus.running("Rebinning the spectra from log to lin")
@@ -417,8 +426,18 @@ def measureLineStrengths(config, RESOLUTION="ORIGINAL"):
             "Rebinning the error spectra from log to lin", progressbar=False
         )
 
+        # Rebin the lsf spectra from log to lin
+        printStatus.running("Rebinning the lsf spectra from log to lin")
+
+        for i in range(nbins):
+            # printStatus.progressBar(i, nbins, barLength=50)
+            lsf[i, :], _ = log_unbinning(lamRange, oldlsf[i, :])
+        printStatus.updateDone(
+            "Rebinning the error spectra from log to lin", progressbar=False
+        )
+
         # Save cleaned, linear spectra
-        saveCleanedLinearSpectra(spec, espec, wave, npix, config)
+        saveCleanedLinearSpectra(spec, espec, lsf, wave, npix, config)
 
     # Read the linearly-binned, cleaned spectra provided by previous LS-run
     else:
@@ -465,7 +484,12 @@ def measureLineStrengths(config, RESOLUTION="ORIGINAL"):
             'r',
         ) as f:
             # Read the VELSCALE attribute from the file
-            velscale = f.attrs["VELSCALE"]
+
+            logLam_full = f["LOGLAM"][:]
+
+            dlog = np.mean(np.diff(logLam_full))
+            velscale = 299792.458 * dlog   # must be km/s
+            #velscale = f.attrs["VELSCALE"]
         # Iterate over all bins
         for i in range(0, nbins):
             # printStatus.progressBar(i, nbins, barLength=50)
@@ -474,6 +498,8 @@ def measureLineStrengths(config, RESOLUTION="ORIGINAL"):
             veldisp_kin_Angst = veldisp_kin[i] * wave / cvel * 2.355
 
             # Total dispersion for this bin
+            LSF_Data, LSF_Templates = _auxiliary.getmangaLSF(config, "LS", lsf[:,i], wave) # Anyone's guess if lsf should be [:,i] or [i,:]. Also what format wave should be in
+
             total_dispersion = np.sqrt(LSF_Data(wave) ** 2 + veldisp_kin_Angst**2)
 
             # Difference between total dispersion and LIS measurement resolution

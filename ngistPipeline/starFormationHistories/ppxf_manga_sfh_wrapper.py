@@ -172,15 +172,56 @@ def run_ppxf_firsttime(
     offset,
     degree,
     mdeg,
-    regul,
+    regul_err,
     velscale_ratio,
     ncomb,
+    var_lsf,
+    config,
+    logLam,
+    lsf_dat,
+    wave_dat,
 ):
     """
     Call PPXF for first time to get optimal template
     """
 
     printStatus.running("Running pPXF for the first time")
+
+    if var_lsf == True: # optional step to determine templates here if variable lsf
+        # Read LSF information
+        LSF_Data, LSF_Templates = _auxiliary.getmangaLSF(config, "SFH", lsf_dat, wave_dat)  # For first time, use averaged central LSF.
+
+        # Prepare templates - overwrite the templates keyword
+        velscale_ratio = 2 #1
+        dlog = np.mean(np.diff(logLam))
+        velscale = 299792.458 * dlog   # must be km/s
+        logging.info("Using full spectral library for PPXF")
+        # Get the actual wavelength limits from your data
+        lam_min = np.exp(logLam[0])
+        lam_max = np.exp(logLam[-1])
+
+
+        (
+            templates,
+            lamRange_spmod,
+            logLam_template,
+            ntemplates,
+        ) = _prepareTemplates.prepareTemplates_Module(
+            config,
+            lam_min,
+            lam_max,
+            velscale / velscale_ratio,
+            LSF_Data,
+            LSF_Templates,
+            "SFH",
+            sortInGrid=True,
+        )[
+            :4
+        ]
+        templates = templates.reshape((templates.shape[0], ntemplates))
+
+        # Last preparatory steps
+        offset = (logLam_template[0] - logLam[0]) * C
     # normalise galaxy spectra and noise
     median_log_bin_data = np.nanmedian(log_bin_data)
     log_bin_error = log_bin_error / median_log_bin_data
@@ -198,7 +239,7 @@ def run_ppxf_firsttime(
         degree=-1,
         vsyst=offset,
         mdegree=mdeg,
-        regul = regul,
+        regul = 1./regul_err,
         velscale_ratio=velscale_ratio,
     )
 
@@ -225,6 +266,7 @@ def run_ppxf(
     templates,
     log_bin_data,
     log_bin_error,
+    lsf,
     velscale,
     start,
     goodPixels_step0,
@@ -233,7 +275,7 @@ def run_ppxf(
     offset,
     degree,
     mdeg,
-    regul,
+    regul_err,
     doclean,
     fixed,
     velscale_ratio,
@@ -250,7 +292,9 @@ def run_ppxf(
     alpha_grid,
     config,
     doplot,
+    var_lsf,
 ):
+
 
     """
     Calls the penalised Pixel-Fitting routine from Cappellari & Emsellem 2004
@@ -258,12 +302,41 @@ def run_ppxf(
     ui.adsabs.harvard.edu/?#abs/2017MNRAS.466..798C), in order to determine the
     non-parametric star-formation histories.
     """
-    # printStatus.progressBar(i, nbins, barLength=50)
 
-    dotry=1
-    if dotry==1:
-    #try:
+    try:
         if len(optimal_template_in) > 1:
+
+            if var_lsf == True: # optional step to determine templates here if variable lsf
+                # Read LSF information
+                LSF_Data, LSF_Templates = _auxiliary.getmangaLSF(config, "SFH", lsf, np.exp(logLam))  
+                # Prepare templates
+                velscale_ratio = 1
+                logging.info("Using full spectral library for PPXF")
+                # Get the actual wavelength limits from your data
+                lam_min = np.exp(logLam[0])
+                lam_max = np.exp(logLam[-1])
+
+                (
+                    templates,
+                    lamRange_spmod,
+                    logLam_template,
+                    ntemplates,
+                ) = _prepareTemplates.prepareTemplates_Module(
+                    config,
+                    lam_min,
+                    lam_max,
+                    velscale / velscale_ratio,
+                    LSF_Data,
+                    LSF_Templates,
+                    "SFH",
+                    sortInGrid=True,
+                )[
+                    :4
+                ]
+
+
+                # Last preparatory steps
+                offset = (logLam_template[0] - logLam[0]) * C
 
             # Normalise galaxy spectra and noise
             median_log_bin_data = np.nanmedian(log_bin_data)
@@ -279,6 +352,10 @@ def run_ppxf(
             component_step0 = [0] *  np.prod(optimal_template_in.shape[1:])
             component_true_step0 = np.array(component_step0) == 0
             dust = [{"start": [EBV_init], "bounds": [[0, 8]], "component": component_true_step0}]
+
+            dlog = np.mean(np.diff(logLam))
+            velscale = 299792.458 * dlog   # must be km/s
+
 
             pp_step0 = ppxf(optimal_template_in, log_bin_data, log_bin_error, velscale, lam=np.exp(logLam), 
                             goodpixels=goodPixels_step0,degree=-1, mdegree=-1, vsyst=offset, 
@@ -374,9 +451,8 @@ def run_ppxf(
             # A temporary fix for the noise issue where a single high S/N spaxel causes clipping of the entire spectrum
             noise_new[np.where(noise_new <= noise_est-noise_new_std)] = noise_est
 
-
             ################ 2 ##################
-            # Second step (formely done with pPXF CLEAN)
+            # Second step (formerly done with pPXF CLEAN)
             # switch to mask instead of goodpixels
             mask0 = logLam > 0
             mask0[:] = False
@@ -404,7 +480,7 @@ def run_ppxf(
                 degree=-1,
                 vsyst=offset,
                 mdegree=mdeg,
-                regul = regul,
+                regul = 1./regul_err,
                 fixed=fixed,
                 lam=np.exp(logLam),
                 velscale_ratio=velscale_ratio,
@@ -488,7 +564,7 @@ def run_ppxf(
                     degree=-1,
                     vsyst=offset,
                     mdegree=mdeg,
-                    regul = 0,
+                    regul = 1./regul_err,
                     fixed=fixed,
                     lam=np.exp(logLam),
                     velscale_ratio=velscale_ratio,
@@ -546,19 +622,21 @@ def run_ppxf(
         )
 
     #except Exception as e:
-    #except:
-    else:
+    except Exception as e:
         # Handle any other type of exception
-        #print(f"An error occurred: {e}")
-        mc_results_nan = {
-            "w_row_MC_iter": np.nan,
-                "w_row_MC_mean": np.nan,
-                "w_row_MC_err": np.nan,
-                "mean_results_MC_iter": np.nan,
-                "mean_results_MC_mean":  np.nan,
-                "mean_results_MC_err":  np.nan
-            }
-        return( np.nan, np.nan, np.nan, np.nan, mc_results_nan, np.nan, np.nan, np.nan, np.nan,np.nan)
+        print(f"Error in bin {i}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise
+        # mc_results_nan = {
+        #     "w_row_MC_iter": np.nan,
+        #         "w_row_MC_mean": np.nan,
+        #         "w_row_MC_err": np.nan,
+        #         "mean_results_MC_iter": np.nan,
+        #         "mean_results_MC_mean":  np.nan,
+        #         "mean_results_MC_err":  np.nan
+        #     }
+        #return( np.nan, np.nan, np.nan, np.nan, mc_results_nan, np.nan, np.nan, np.nan, np.nan,np.nan)
 
 
 def mean_agemetalalpha(w_row, ageGrid, metalGrid, alphaGrid, nbins):
@@ -816,53 +894,10 @@ def extractStarFormationHistories(config):
     - config: dictionary containing configuration parameters
     """
 
-    # Read LSF information
-    LSF_Data, LSF_Templates = _auxiliary.getLSF(config, "SFH")
-
-    # Prepare template library
-    # Open the HDF5 file
-    with h5py.File(os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_bin_spectra.hdf5", 'r') as f:
-        # Read the VELSCALE attribute from the file
-        velscale = f.attrs["VELSCALE"]
-        
-    velscale_ratio = 2
-
-    (
-        templates,
-        lamRange_temp,
-        logLam_template,
-        ntemplates,
-        logAge_grid,
-        metal_grid,
-        alpha_grid,
-        ncomb,
-        nAges,
-        nMetal,
-        nAlpha,
-    ) = _prepareTemplates.prepareTemplates_Module(
-        config,
-        config["SFH"]["LMIN"],
-        config["SFH"]["LMAX"],
-        velscale/velscale_ratio,
-        LSF_Data,
-        LSF_Templates,
-        'SFH',
-        sortInGrid=True,
-    )
-
-    # check that template wavelength is larger than requested fit range otherwise stop
-    if (lamRange_temp[0] >= config["SFH"]["LMIN"]) or (lamRange_temp[1] <= config["SFH"]["LMAX"]):
-        logging.info("Template wavelength range needs to be larger than fitting range, exiting")
-        printStatus.warning(
-            "Template wavelength range needs to be larger than fitting range, exiting"
-        )
-        return
-
     # Define file paths
     gas_cleaned_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + '_gas_cleaned_'+config["GAS"]["LEVEL"].lower()+'.fits'
-    bin_spectra_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_bin_spectra.hdf5"
 
-    # Check if emission-subtracted spectra file exists
+    # Check if emission-subtracted spectra file exists -- Amelia come back to this after you've done the GAS module
     if (config["SFH"]["SPEC_EMICLEAN"] == True) and os.path.isfile(gas_cleaned_file):
         logging.info(f"Using emission-subtracted spectra at {gas_cleaned_file}")
         printStatus.done("Using emission-subtracted spectra")
@@ -880,26 +915,68 @@ def extractStarFormationHistories(config):
             logLam = logLam[idx_lam]
             nbins = bin_data.shape[1]
             npix = bin_data.shape[0]
+            dlog = np.mean(np.diff(logLam))
+            velscale = 299792.458 * dlog   # must be km/s
     else:
+        bin_spectra_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_bin_spectra.hdf5"
         logging.info(f"Using regular spectra without any emission-correction at {bin_spectra_file}")
         printStatus.done("Using regular spectra without any emission-correction")
-        with h5py.File(bin_spectra_file, 'r') as f:
-            # Read the LOGLAM data from the file
-            logLam = f["LOGLAM"][:]
+    # Open the HDF5 file
+        with h5py.File(os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_bin_spectra.hdf5", 'r') as f:
+            logLam_full = f["LOGLAM"][:]
+            wave = np.exp(logLam_full)
+            idx_lam = np.where(
+                np.logical_and(wave > config["SFH"]["LMIN"], wave < config["SFH"]["LMAX"])
+            )[0]
+            logLam = logLam_full[idx_lam]
+            bin_data = f["SPEC"][:][idx_lam, :]
+            bin_err = f["ESPEC"][:][idx_lam, :]
+            bin_lsf = f["LSF"][:][idx_lam, :]
+            dlog = np.mean(np.diff(logLam))
+            velscale = 299792.458 * dlog   # must be km/s
 
-            # Select the indices where the wavelength is within the specified range
-            idx_lam = np.where(np.logical_and(np.exp(logLam) > config["SFH"]["LMIN"], np.exp(logLam) < config["SFH"]["LMAX"]))[0]
+            npix = bin_data.shape[0] 
+            nbins = bin_data.shape[1]
+            ubins = np.arange(0, nbins)
 
-            # Read the SPEC and ESPEC data from the file, only for the selected indices
-            bin_data = f["SPEC"][idx_lam, :]
-            bin_err = f["ESPEC"][idx_lam, :]
-            logLam = logLam[idx_lam]
+    # Prepare template library
 
-    # Define additional variables
-    nbins = bin_data.shape[1]
-    npix = bin_data.shape[0]
-    ubins = np.arange(nbins)
-    dv = (np.log(lamRange_temp[0]) - logLam[0])*C
+
+    # Get the actual wavelength limits from your data
+    lam_min = np.exp(logLam[0])
+    lam_max = np.exp(logLam[-1])
+    lsfDataFile = os.path.join(
+        config["GENERAL"]["CONFIG_DIR"], config["GENERAL"]["LSF_DATA"]
+    )
+    LSFfile = np.genfromtxt(lsfDataFile, comments="#") # this is fine, but needs to be trimmed to KIN wavelength range first or else it will return low resolution errors
+
+    LSF_Data, LSF_Templates = _auxiliary.getmangaLSF(config, "SFH", LSFfile[:, 1], LSFfile[:, 0])  # added input of module
+
+
+    velscale_ratio = 1 
+
+    (
+        templates,
+        lamRange_temp,
+        logLam_template,
+        ntemplates,
+        logAge_grid,
+        metal_grid,
+        alpha_grid,
+        ncomb,
+        nAges,
+        nMetal,
+        nAlpha,
+    ) = _prepareTemplates.prepareTemplates_Module(
+        config,
+        lam_min,
+        lam_max,
+        velscale / velscale_ratio, 
+        LSF_Data,
+        LSF_Templates,
+        'SFH',
+        sortInGrid=True,
+    )
 
 
     # Last preparatory steps
@@ -936,6 +1013,7 @@ def extractStarFormationHistories(config):
         for i in range(nbins):
             start[i, :] = np.array(ppxf_data[i][: config["KIN"]["MOM"]])
 
+
     # Do *NOT* fix kinematics to those obtained previously
     elif config["SFH"]["FIXED"] == False:
         logging.info(
@@ -953,6 +1031,7 @@ def extractStarFormationHistories(config):
                 start[i, :] = np.array([0.0, config["KIN"]["SIGMA"],0.0,0.0,0.0,0.0])
 
     # Define goodpixels
+
     #check if a premask for step zero has been defined
     if 'SPEC_PREMASK' in config["SFH"]:
         #yes, load this premask file
@@ -965,16 +1044,8 @@ def extractStarFormationHistories(config):
     
     # Check if plot keyword is set:
     doplot = config["SFH"].get("PLOT", False)
-
-    # define the regularisation value 
-    sfh_cfg = config["SFH"]
-    if "REGUL" in sfh_cfg:
-        regul = sfh_cfg["REGUL"]
-    elif "REGUL_ERR" in sfh_cfg:
-        regul_err = sfh_cfg["REGUL_ERR"]
-        regul = 0.0 if regul_err == 0 else 1.0 / regul_err
-    else:
-        raise KeyError("Either SFH.REGUL or SFH.REGUL_ERR must be set")
+    # Check if variable LSF keyword is set: -- This is where this codebloick was originally
+    var_lsf = config["SFH"]["VAR_LSF"]
 
     # Define output arrays
     ppxf_result = np.zeros((nbins,6    ))
@@ -1013,12 +1084,16 @@ def extractStarFormationHistories(config):
             start[0,:],
             goodPixels_step0_sfh,
             config["SFH"]["MOM"],
-            offset,
-            -1,
+            offset,-1,
             config["SFH"]["MDEG"],
-            regul,
+            config["SFH"]["REGUL_ERR"],
             velscale_ratio,
             ncomb,
+            var_lsf,
+            config,
+            logLam,
+            LSFfile[:, 1], 
+            LSFfile[:, 0],
         )
 
         # now define the optimal template that we'll use throughout
@@ -1031,7 +1106,6 @@ def extractStarFormationHistories(config):
  
     # ====================
     EBV_init = 0.1 # PHANGS value initial guess
-
     # ====================
     # Run PPXF
     start_time = time.time()
@@ -1056,6 +1130,10 @@ def extractStarFormationHistories(config):
         dump(noise, noise_filename_memmap)
         noise = load(noise_filename_memmap, mmap_mode='r')
 
+        lsf_filename_memmap = memmap_folder + "/lsf_memmap.tmp"
+        dump(bin_lsf, lsf_filename_memmap)
+        bin_lsf = load(lsf_filename_memmap, mmap_mode='r')
+
         # Define a function to encapsulate the work done in the loop
         def worker(chunk, templates):
             results = []
@@ -1064,6 +1142,7 @@ def extractStarFormationHistories(config):
                     templates,
                     bin_data[:,i],
                     noise[:,i],
+                    bin_lsf[:,i],
                     velscale,
                     start[i,:],
                     goodPixels_step0_sfh,
@@ -1072,7 +1151,7 @@ def extractStarFormationHistories(config):
                     offset,
                     -1,
                     config["SFH"]["MDEG"],
-                    regul,
+                    config["SFH"]["REGUL_ERR"],
                     config["SFH"]["DOCLEAN"],
                     fixed,
                     velscale_ratio,
@@ -1089,6 +1168,7 @@ def extractStarFormationHistories(config):
                     alpha_grid,
                     config,
                     doplot,
+                    var_lsf,
                 )
                 results.append(result)
             return results
@@ -1126,9 +1206,11 @@ def extractStarFormationHistories(config):
         os.remove(templates_filename_memmap)
         os.remove(bin_data_filename_memmap)
         os.remove(noise_filename_memmap)
+        os.remove(lsf_filename_memmap)
+
         
         printStatus.updateDone("Running PPXF in parallel mode", progressbar=False)
-        
+
 
     if config["GENERAL"]["PARALLEL"] == False:
         printStatus.running("Running PPXF in serial mode")
@@ -1157,6 +1239,7 @@ def extractStarFormationHistories(config):
                 templates,
                 bin_data[:,i],
                 noise[:,i],
+                bin_lsf[:,i],
                 velscale,
                 start[i,:],
                 goodPixels_step0_sfh,
@@ -1165,7 +1248,7 @@ def extractStarFormationHistories(config):
                 offset,
                 -1,
                 config["SFH"]["MDEG"],
-                regul,
+                config["SFH"]["REGUL_ERR"],
                 config["SFH"]["DOCLEAN"],
                 fixed,
                 velscale_ratio,
@@ -1182,6 +1265,7 @@ def extractStarFormationHistories(config):
                 alpha_grid,
                 config,
                 doplot,
+                var_lsf,
             )
             w_row_MC_iter[i,:,:] = mc_results_i["w_row_MC_iter"]
             w_row_MC_mean[i,:] = mc_results_i["w_row_MC_mean"]
@@ -1256,5 +1340,4 @@ def extractStarFormationHistories(config):
         EBV,
     )
 
-    # Return
     return None

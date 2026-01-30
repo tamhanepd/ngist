@@ -4,6 +4,7 @@ import os
 import numpy as np
 from astropy.io import fits
 from printStatus import printStatus
+from scipy.ndimage import gaussian_filter
 
 
 def generate_spatial_mask(config, cube):
@@ -44,10 +45,16 @@ def generateSpatialMask(config, cube):
 
     # Mask defunct spaxels
     maskedDefunct = maskDefunctSpaxels(cube)
-
+    
     # Mask spaxels with SNR below threshold
+    # check if a specific method is preferred
+    if 'THRESHOLD_METHOD' in config["SPATIAL_MASKING"]:
+        threshold_method  = config["SPATIAL_MASKING"]["THRESHOLD_METHOD"]
+    else:
+        threshold_method  = 'isophote'
+
     maskedSNR = applySNRThreshold(
-        cube["snr"], cube["signal"], config["SPATIAL_MASKING"]["MIN_SNR"]
+        cube["snr"], cube["signal"], config["SPATIAL_MASKING"]["MIN_SNR"], threshold_method = threshold_method
     )
 
     # Mask spaxels according to spatial mask file
@@ -118,6 +125,19 @@ def applySNRThreshold(snr, signal, min_snr, threshold_method="isophote"):
         idx_inside = np.where(snr >= min_snr)[0]
         idx_outside = np.where(snr < min_snr)[0]
 
+    if threshold_method == "smooth":
+
+        mask = np.isfinite(snr)
+        snr_filled = np.where(mask, snr, 0.0)
+
+        smoothed_snr = gaussian_filter(snr_filled, sigma=5.0)
+        smoothed_mask = gaussian_filter(mask.astype(float), sigma=5.0)
+
+        smoothed = smoothed_snr / smoothed_mask
+
+        idx_inside = np.where(smoothed >= min_snr)[0]
+        idx_outside = np.where(smoothed < min_snr)[0]        
+
     if len(idx_inside) == 0 and len(idx_outside) == 0:
         idx_inside = np.arange(len(snr))
         idx_outside = np.array([], dtype=np.int64)
@@ -132,7 +152,6 @@ def applySNRThreshold(snr, signal, min_snr, threshold_method="isophote"):
     masked[idx_inside] = False
     masked[idx_outside] = True
 
-    return masked
     return masked
 
 
