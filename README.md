@@ -25,7 +25,7 @@ on the fly.
 
 Citing GIST and the analysis routines
 -------------------------------------
-If you use this software framework for any publication, please cite Fraser-McKelvie et al. 2025, A&A 700, 237 (https://ui.adsabs.harvard.edu/abs/2025A%26A...700A.237F/abstract), and 
+If you use this software framework for any publication, please cite Fraser-McKelvie et al. 2025, A&A 700, 237 ([https://ui.adsabs.harvard.edu/abs/2025A%26A...700A.237F/abstract](https://scixplorer.org/abs/2025A%26A...700A.237F/abstract)), and 
 include the nGIST ASCL entry (https://ascl.net/2507.015) in a footnote.
 
 You may also consider citing the original GIST pipeline, the code for which the nGIST pipeline is based:
@@ -43,9 +43,8 @@ van de Sande et al. 2017 (https://ui.adsabs.harvard.edu/abs/2017ApJ...835..104V)
 
 - If you use the 'ppxf' routine of the CONT module, please cite the above pPXF references.
 
-- If you use the 'ppxf' routine of the GAS module, please cite the above pPXF references.
-If you use the 'gandalf' routine of the GAS module, please cite Sarzi et al. 2006 (https://ui.adsabs.harvard.edu/abs/2006MNRAS.366.1151S) (ASCL: https://ascl.net/1708.012)
-If you use the 'magpi_gandalf' routine of the GAS module, please cite Battisti et al., (in prep).
+- If you use the 'ppxf' routine of the GAS module, please cite the above pPXF references, and consider citing the PHANGS DAP paper (https://scixplorer.org/abs/2022A%26A...659A.191E/abstract), upon which portions of this code are based. 
+If you use the 'gandalf' routine of the GAS module, please cite Sarzi et al. 2006 (https://ui.adsabs.harvard.edu/abs/2006MNRAS.366.1151S) (ASCL: https://ascl.net/1708.012) and cite Battisti et al., (in prep).
 
 - If you use the 'ppxf' routine of the SFH module, please cite the same references as for the KIN module (if not cited already).
 
