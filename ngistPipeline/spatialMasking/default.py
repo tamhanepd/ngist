@@ -50,7 +50,9 @@ def generateSpatialMask(config, cube):
     # check if a specific method is preferred
     if 'THRESHOLD_METHOD' in config["SPATIAL_MASKING"]:
         threshold_method  = config["SPATIAL_MASKING"]["THRESHOLD_METHOD"]
-    
+    else:
+        threshold_method  = 'isophote'
+
     maskedSNR = applySNRThreshold(
         cube["snr"], cube["signal"], config["SPATIAL_MASKING"]["MIN_SNR"], threshold_method = threshold_method
     )
