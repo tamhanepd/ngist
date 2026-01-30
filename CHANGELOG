@@ -74,17 +74,17 @@ V7.3.0	    2024-11-12 CHANGED Major: 1) Changed name of routine to ngistPipeline
 			Improved memory management and support for large data operations by 
 			transitioning from FITS to HDF5 tables.
 
-    		CHANGED Minor: A) Rename Scripts: Renamed scripts that duplicate module 
-    		names, e.g., ppxf.py. B) FITS File Branding: Removed FITS file branding 
-    		from skipped galaxies. C) MapViewer Read HDF5: MapViewer can read the 
-    		HDF5 pipeline files AND FITS files to maintain backward compatibility 
-    		with older results directories. D) General Tidying: General tidy-ups 
-    		and added docstrings. E) GAS Spaxel mode: Fixed previous bug in GAS 
-    		module related to incorrect nbin definition in Spaxel mode. F) CONT 
-    		module: Reverted back to default MUSE header keywords in generated 
-    		cubes. Fixed bug that called KIN module config setting instead of CONT.
+    			CHANGED Minor: A) Rename Scripts: Renamed scripts that duplicate module 
+    			names, e.g., ppxf.py. B) FITS File Branding: Removed FITS file branding 
+    			from skipped galaxies. C) MapViewer Read HDF5: MapViewer can read the 
+    			HDF5 pipeline files AND FITS files to maintain backward compatibility 
+    			with older results directories. D) General Tidying: General tidy-ups 
+    			and added docstrings. E) GAS Spaxel mode: Fixed previous bug in GAS 
+    			module related to incorrect nbin definition in Spaxel mode. F) CONT 
+    			module: Reverted back to default MUSE header keywords in generated 
+    			cubes. Fixed bug that called KIN module config setting instead of CONT.
 
-V7.2.1	    2024-07-28 ADDED: Ability to create BPT maps in the GAS module if all required
+V7.2.1	     2024-07-28 ADDED: Ability to create BPT maps in the GAS module if all required
 			emission lines are present. Note: there is currently no AoN 
 			threshold applied to these lines.
 

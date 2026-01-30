@@ -62,9 +62,6 @@ KIN :
   LIBRARY : 'MILES/'
   NORM_TEMP : 'LIGHT'
   DOCLEAN : True
-  OPT_TEMP : 'default'
-  DUST_CORR : True
-  NOISE : 'constant'
 
 # Continuum Cube module
 CONT :
@@ -123,10 +120,7 @@ SFH :
   LIBRARY : 'MILES/'
   NORM_TEMP : 'LIGHT'
   DOCLEAN : True
-  OPT_TEMP : 'default'
-  DUST_CORR : True
-  NOISE : 'constant'  
-
+  
 # Line strenghts module
 LS :
   METHOD : 'default'
