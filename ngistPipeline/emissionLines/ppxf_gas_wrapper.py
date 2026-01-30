@@ -1094,87 +1094,92 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
     sigma_final_measured = (sigma_final**2 + templates_sigma**2) ** (0.5)
 
     # save results to file
-    if config["GAS"]["LEVEL"] != "BOTH":
-        save_ppxf_emlines(
-            config,
-            config["GENERAL"]["OUTPUT"],
-            config["GENERAL"]["RUN_ID"],
-            config["GAS"]["LEVEL"],
-            linesfitted,
-            gas_flux_in_units,
-            gas_err_flux_in_units,
-            vel_final,
-            vel_err_final,
-            sigma_final_measured,
-            sigma_err_final,
-            chi2,
-            templates_sigma,
-            bestfit,
-            gas_bestfit,
-            stkin,
-            spectra,
-            error,
-            goodPixels_gas,
-            logLam_galaxy,
-            ubins,
-            npix,
-            extra,
-        )
 
-    if (
-        config["GAS"]["LEVEL"] == "BOTH"
-    ):  # Special case when wanting the gas in bin and spaxel modes
-        save_ppxf_emlines(
-            config,
-            config["GENERAL"]["OUTPUT"],
-            config["GENERAL"]["RUN_ID"],
-            "BIN",
-            linesfitted,
-            gas_flux_in_units,
-            gas_err_flux_in_units,
-            vel_final,
-            vel_err_final,
-            sigma_final_measured,
-            sigma_err_final,
-            chi2,
-            templates_sigma,
-            bestfit,
-            gas_bestfit,
-            stkin,
-            spectra,
-            error,
-            goodPixels_gas,
-            logLam_galaxy,
-            ubins,
-            npix,
-            extra,
-        )
+    save_ppxf_emlines(
+        config,
+        config["GENERAL"]["OUTPUT"],
+        config["GENERAL"]["RUN_ID"],
+        currentLevel,
+        linesfitted,
+        gas_flux_in_units,
+        gas_err_flux_in_units,
+        vel_final,
+        vel_err_final,
+        sigma_final_measured,
+        sigma_err_final,
+        chi2,
+        templates_sigma,
+        bestfit,
+        gas_bestfit,
+        stkin,
+        spectra,
+        error,
+        goodPixels_gas,
+        logLam_galaxy,
+        ubins,
+        npix,
+        extra,
+    )
 
-        save_ppxf_emlines(
-            config,
-            config["GENERAL"]["OUTPUT"],
-            config["GENERAL"]["RUN_ID"],
-            "SPAXEL",
-            linesfitted,
-            gas_flux_in_units,
-            gas_err_flux_in_units,
-            vel_final,
-            vel_err_final,
-            sigma_final_measured,
-            sigma_err_final,
-            chi2,
-            templates_sigma,
-            bestfit,
-            gas_bestfit,
-            stkin,
-            spectra,
-            error,
-            goodPixels_gas,
-            logLam_galaxy,
-            ubins,
-            npix,
-            extra,
-        )
+ #   if (
+ #       config["GAS"]["LEVEL"] == "BOTH"
+ #   ):  # Special case when wanting the gas in bin and spaxel modes
+ #       save_ppxf_emlines(
+ #           config,
+ #           config["GENERAL"]["OUTPUT"],
+ #           config["GENERAL"]["RUN_ID"],
+ #           "BIN",
+ #           linesfitted,
+ #           gas_flux_in_units,
+ #           gas_err_flux_in_units,
+ #           vel_final,
+ #           vel_err_final,
+ #           sigma_final_measured,
+ #           sigma_err_final,
+ #           chi2,
+ #           templates_sigma,
+ #           bestfit,
+ #           gas_bestfit,
+ #           stkin,
+ #           spectra,
+ #           error,
+ #           goodPixels_gas,
+ #           logLam_galaxy,
+ #           ubins,
+ #           npix,
+ #           extra,
+ #       )
+#
+ #       save_ppxf_emlines(
+ #           config,
+ #           config["GENERAL"]["OUTPUT"],
+ #           config["GENERAL"]["RUN_ID"],
+ #           "SPAXEL",
+ #           linesfitted,
+ #           gas_flux_in_units,
+ #           gas_err_flux_in_units,
+ #           vel_final,
+ #           vel_err_final,
+ #           sigma_final_measured,
+ #           sigma_err_final,
+ #           chi2,
+ #           templates_sigma,
+ #           bestfit,
+ #           gas_bestfit,
+ #           stkin,
+ #           spectra,
+ #           error,
+ #           goodPixels_gas,
+ #           logLam_galaxy,
+ #           ubins,
+ #           npix,
+ #           extra,
+ #       )
+
+    # Restart pPPXF if a SPAXEL level run based on a previous BIN level run is intended
+    if config["GAS"]["LEVEL"] == "BOTH" and currentLevel == "BIN":
+        print()
+        performEmissionLineAnalysis(config)
 
     printStatus.updateDone("Emission line fitting done")
     # print("")

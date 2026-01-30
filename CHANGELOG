@@ -6,6 +6,10 @@
 ------------------------------------------------------------------------------------------
 VERSION    DATE          DESCRIPTION
 ------------------------------------------------------------------------------------------
+V7.6.7      2026-01-30 FIXED: correct outputs for gas BOTH mode in ppxf_gas_wrapper. 
+		    ADDED: keyword THRESHOLD_METHOD: 'isophote' as default, 'actual', 'smooth'
+		    in spatial masking module.
+
 V7.6.6      2026-01-29 FIXED: general code, with cleanup of redundant keywords. Added 
 		    option in spatial_binning for no binning next to voronoi binning. 
 			ADDED: galactic extinction correction to all MUSE read modules, and corrected 
@@ -16,7 +20,7 @@ V7.6.6      2026-01-29 FIXED: general code, with cleanup of redundant keywords. 
 		    check for template wavelength range being larger than galaxy wavelength range						
 			CHANGED: emissionLines.config and emissionLinesPHANGS.config renamed to 
 		    emissionLines_gandalf.config and emissionLines_ppxf.config. Gas module 
-		    REDDENING keyword changed to dust_corr. 
+		    REDDENING keyword changed to DUST_CORR. 
 
 V7.6.5	    2026-01-28 ADDED functionality for SAMI and MaNGA. These are in beta testing.
 	       Please do not use these without speaking to the developers!
