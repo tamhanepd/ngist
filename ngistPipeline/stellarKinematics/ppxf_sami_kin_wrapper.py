@@ -4,9 +4,11 @@ import time
 
 import h5py
 import numpy as np
+import ppxf as ppxf_package
 from astropy.io import fits
 from astropy.stats import biweight_location
 from joblib import Parallel, delayed, dump, load
+from packaging import version
 from ppxf.ppxf import ppxf
 from printStatus import printStatus
 from tqdm import tqdm
@@ -16,6 +18,9 @@ import matplotlib.ticker as ticker
 
 from ngistPipeline.auxiliary import _auxiliary
 from ngistPipeline.prepareTemplates import _prepareTemplates
+
+import warnings
+warnings.filterwarnings("ignore")
 
 # PHYSICAL CONSTANTS
 C = 299792.458  # km/s
@@ -147,6 +152,59 @@ def robust_sigma(y, zero=False):
 
     return sigma
 
+def run_ppxf_firsttime(
+    templates,
+    log_bin_data,
+    log_bin_error,
+    velscale,
+    start,
+    goodPixels,
+    nmoments,
+    offset,
+    adeg,
+    mdeg,
+    velscale_ratio,
+):
+    """
+    Call PPXF for first time to get optimal template
+    """
+
+    printStatus.running("Running pPXF for the first time")
+    # normalise galaxy spectra and noise
+    median_log_bin_data = np.nanmedian(log_bin_data)
+    log_bin_error = log_bin_error / median_log_bin_data
+    log_bin_data = log_bin_data / median_log_bin_data
+    pp = ppxf(
+        templates,
+        log_bin_data,
+        log_bin_error,
+        velscale,
+        start,
+        goodpixels=goodPixels,
+        plot=False,
+        quiet=True,
+        moments=nmoments,
+        degree=adeg,
+        vsyst=offset,
+        mdegree=mdeg,
+        velscale_ratio=velscale_ratio,
+    )
+    normalized_weights = pp.weights / np.sum( pp.weights )
+    
+    optimal_template   = np.zeros((templates.shape[0],1))
+    nonzero_weights = np.shape(np.where(normalized_weights > 0)[0])[0]
+    optimal_template_set = np.zeros( [templates.shape[0], nonzero_weights])
+    printStatus.running('Number of Templates with non-zero weights ' +str(nonzero_weights))
+    
+    count_nonzero = 0
+    for j in range(0, templates.shape[1]):
+        optimal_template[:,0] = optimal_template[:,0] + templates[:,j]*normalized_weights[j]
+        if normalized_weights[j] > 0:
+            optimal_template_set[:,count_nonzero] = templates[:,j]
+            count_nonzero += 1
+
+    return optimal_template, optimal_template_set
+
 def run_ppxf(
     templates,
     log_bin_data,
@@ -154,6 +212,7 @@ def run_ppxf(
     velscale,
     start,
     bias,
+    goodPixels_step0,
     goodPixels,
     nmoments,
     adeg,
@@ -162,10 +221,14 @@ def run_ppxf(
     logLam,
     offset,
     velscale_ratio,
+    ntemplates,
     nsims,
     nbins,
     i,
     optimal_template_in,
+    EBV_init,
+    config,
+    doplot,    
 ):
     """
     Calls the penalised Pixel-Fitting routine from Cappellari & Emsellem 2004
@@ -173,8 +236,6 @@ def run_ppxf(
     ui.adsabs.harvard.edu/?#abs/2017MNRAS.466..798C), in order to determine the
     stellar kinematics.
     """
-    # printStatus.progressBar(i, nbins, barLength=50)
-
     try:
         if len(optimal_template_in) > 1:
 
@@ -193,11 +254,13 @@ def run_ppxf(
             component_true_step0 = np.array(component_step0) == 0
             dust = [{"start": [EBV_init], "bounds": [[0, 8]], "component": component_true_step0}]
 
+            dlog = np.mean(np.diff(logLam)) # added for SAMI
+            velscale = 299792.458 * dlog   # must be km/s; added for SAMI
+
             pp_step0 = ppxf(optimal_template_in, log_bin_data, log_bin_error, velscale, lam=np.exp(logLam), 
                             goodpixels=goodPixels_step0,degree=-1, mdegree=-1, vsyst=offset, 
                             velscale_ratio=velscale_ratio,moments=nmoments, start=start, plot=False, 
-                            dust = dust, component = component_step0, regul=0,quiet=True)
-
+                            dust = dust, component = component_step0, regul=0, quiet=True)
             # check which optimal template method is preferred. If default rederive optimal set from step 0
             if config["KIN"]["OPT_TEMP"] == 'default':
 
@@ -247,35 +310,6 @@ def run_ppxf(
                 dust_step12 = None
                 dust_step3 = None
 
-        # normalise galaxy spectra and noise
-        median_log_bin_data = np.nanmedian(log_bin_data)
-        log_bin_error = log_bin_error / median_log_bin_data
-        log_bin_data = log_bin_data / median_log_bin_data
-
-        #calculate the snr before the fit (may be used for bias)
-        snr_prefit = np.nanmedian(log_bin_data/log_bin_error)
-
-        # Call PPXF for first time to get optimal template
-        if len(optimal_template_in) == 1:
-            printStatus.running("Running pPXF for the first time")
-            pp = ppxf(
-                templates,
-                log_bin_data,
-                log_bin_error,
-                velscale,
-                start,
-                goodpixels=goodPixels,
-                plot=False,
-                quiet=True,
-                moments=nmoments,
-                degree=adeg,
-                mdegree=mdeg,
-                reddening=reddening,
-                lam=np.exp(logLam),
-                velscale_ratio=velscale_ratio,
-                vsyst=offset,
-            )
-        else:
             # First Call PPXF - do fit and estimate noise
             # use fake noise for first iteration
             fake_noise = np.full_like(log_bin_data, 1.0)
@@ -286,24 +320,26 @@ def run_ppxf(
                 fake_noise,
                 velscale,
                 start,
-                goodpixels=goodPixels,
+                goodpixels=goodPixels_step0,
                 plot=False,
                 quiet=True,
                 moments=nmoments,
                 degree=adeg,
                 mdegree=mdeg,
-                reddening=reddening,
                 lam=np.exp(logLam),
                 velscale_ratio=velscale_ratio,
                 vsyst=offset,
+                component=component_step12,
+                dust=dust_step12,
             )
-
+            goodPixels_preclip = goodPixels
             # Find a proper estimate of the noise
-            noise_orig = biweight_location(log_bin_error[goodPixels])
+            noise_orig = biweight_location(log_bin_error[goodPixels_step0])
             noise_est = robust_sigma(
-                pp_step1.galaxy[goodPixels] - pp_step1.bestfit[goodPixels]
-            )
+                pp_step1.galaxy[goodPixels_step0] - pp_step1.bestfit[goodPixels_step0])
 
+            # calculate SNR postfit step 1
+            snr_Resid1 = np.nanmedian(pp_step1.galaxy[goodPixels_step0]/noise_est)
             # Calculate the new noise, and the sigma of the distribution.
             noise_new = log_bin_error * (noise_est / noise_orig)
             noise_new_std = robust_sigma(noise_new)
@@ -312,44 +348,18 @@ def run_ppxf(
             noise_new[np.where(noise_new <= noise_est - noise_new_std)] = noise_est
 
             ################ 2 ##################
-            # Second Call PPXF - use best-fitting template, determine outliers
-            # only do this if doclean is set
+            # Second step (formely done with pPXF CLEAN)
+            # switch to mask instead of goodpixels
+            mask0 = logLam > 0
+            mask0[:] = False
+            mask0[goodPixels] = True
+            mask = mask0.copy()
+            
             if doclean == True:
-                pp_step2 = ppxf(
-                    optimal_template_in,
-                    log_bin_data,
-                    noise_new,
-                    velscale,
-                    start,
-                    goodpixels=goodPixels,
-                    plot=False,
-                    quiet=True,
-                    moments=nmoments,
-                    degree=adeg,
-                    mdegree=mdeg,
-                    reddening=reddening,
-                    lam=np.exp(logLam),
-                    velscale_ratio=velscale_ratio,
-                    vsyst=offset,
-                    clean=True,
-                )
-
-                # update goodpixels
-                goodPixels = pp_step2.goodpixels
-
-                # repeat noise scaling # Find a proper estimate of the noise
-                noise_orig = biweight_location(log_bin_error[goodPixels])
-                noise_est = robust_sigma(
-                    pp_step2.galaxy[goodPixels] - pp_step2.bestfit[goodPixels]
-                )
-
-                # Calculate the new noise, and the sigma of the distribution.
-                noise_new = log_bin_error * (noise_est / noise_orig)
-                noise_new_std = robust_sigma(noise_new)
-
-            # A fix for the noise issue where a single high S/N spaxel
-            # causes clipping of the entire spectrum
-            noise_new[np.where(noise_new <= noise_est - noise_new_std)] = noise_est
+                # Now use new function to clip outliers
+                mask = clip_outliers(log_bin_data, pp_step1.bestfit, mask)
+                # Add clipped pixels to the original masked emission lines regions and repeat the fit
+                mask &= mask0
 
             ################ 3 ##################
             # Third Call PPXF - use all templates, get best-fit
@@ -370,7 +380,7 @@ def run_ppxf(
                 velscale,
                 start,
                 bias=bias,
-                goodpixels=goodPixels,
+                mask=mask,
                 plot=False,
                 quiet=True,
                 moments=nmoments,
@@ -379,22 +389,15 @@ def run_ppxf(
                 lam=np.exp(logLam),
                 velscale_ratio=velscale_ratio,
                 vsyst=offset,
+                component=component_step3,
+                dust=dust_step3,                
             )
-
         # update goodpixels again
         goodPixels = pp.goodpixels
 
         # make spectral mask
         spectral_mask = np.full_like(log_bin_data, 0.0)
         spectral_mask[goodPixels] = 1.0
-
-        # Calculate the true S/N from the residual the long version
-        #noise_est_final = robust_sigma(pp.galaxy[goodPixels] - pp.bestfit[goodPixels])
-        #noise_orig = biweight_location(log_bin_error[goodPixels])
-        #noise_final = log_bin_error * (noise_est_final / noise_orig)
-        #noise_final_std = robust_sigma(noise_final)
-        #noise_final[np.where(noise_final <= noise_est_final - noise_final_std)] = noise_est_final
-        #snr_postfit = np.nanmedian(pp.galaxy[goodPixels]/noise_final[goodPixels])
         
         # Calculate the true S/N from the residual the short version
         noise_est = robust_sigma(pp.galaxy[goodPixels] - pp.bestfit[goodPixels])
@@ -410,6 +413,30 @@ def run_ppxf(
 
         # Correct the formal errors assuming that the fit is good
         formal_error = pp.error * np.sqrt(pp.chi2)
+
+        #plotting output
+        if doplot == True:
+
+            # check if figure  folder exists, otherwise
+            outfigDir = os.path.join(config["GENERAL"]["OUTPUT"],'FigFit_KIN')
+            if os.path.exists(outfigDir) == False:
+                printStatus.running('Creating directory for pPXF figures:' + outfigDir)
+                os.mkdir(outfigDir)
+                        
+            outfigFile_step1 = (
+                os.path.join(outfigDir, config["GENERAL"]["RUN_ID"]
+                                + "_kin_bin_"+str(i)+"_step1.pdf"))
+            outfigFile_step3 = (
+                os.path.join(outfigDir, config["GENERAL"]["RUN_ID"]
+                                + "_kin_bin_"+str(i)+"_step3.pdf"))
+
+            #produce plots
+            tmp_plot1 = plot_ppxf_kin(pp_step1,np.exp(logLam),i,outfigFile_step1,
+                                      snrCubevar=snr_prefit,snrResid=snr_Resid1)
+            tmp_plot3 = plot_ppxf_kin(pp,np.exp(logLam),i,outfigFile_step3,\
+                                      snrCubevar=snr_prefit,snrResid=snr_postfit,
+                                      goodpixelsPre=goodPixels_preclip)
+
 
         # Do MC-Simulations
         sol_MC = np.zeros((nsims, nmoments))
@@ -464,7 +491,7 @@ def run_ppxf(
         )
 
     except:
-        return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
+        return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
 
 
 def save_ppxf(
@@ -650,7 +677,9 @@ def save_ppxf(
     cols = []
     cols.append(
         fits.Column(
-            name="OPTIMAL_TEMPLATE_ALL", format="D", array=optimal_template_comb
+            name="OPTIMAL_TEMPLATE_ALL", 
+            format=str(optimal_template_comb.shape[1]) + "D",
+            array=optimal_template_comb
         )
     )
     combHDU = fits.BinTableHDU.from_columns(fits.ColDefs(cols))
@@ -704,6 +733,7 @@ def save_ppxf(
         "Writing: " + config["GENERAL"]["RUN_ID"] + "_kin_spectral_mask.fits"
     )
     logging.info("Wrote: " + outfits)
+
 
 def extractStellarKinematics(config):
     """
@@ -773,15 +803,6 @@ def extractStellarKinematics(config):
         :4
     ]
     templates = templates.reshape((templates.shape[0], ntemplates))
-
-
-    # check that template wavelength is larger than requested fit range otherwise stop
-    if (lamRange_spmod[0] >= config["KIN"]["LMIN"]) or (lamRange_spmod[1] <= config["KIN"]["LMAX"]):
-        logging.info("Template wavelength range needs to be larger than fitting range, exiting")
-        printStatus.warning(
-            "Template wavelength range needs to be larger than fitting range, exiting"
-        )
-        return
 
     # Last preparatory steps
     offset = (logLam_template[0] - logLam[0]) * C
@@ -878,8 +899,19 @@ def extractStellarKinematics(config):
             velscale_ratio,
         )
 
+        # now define the optimal template that we'll use throughout
+        if config["KIN"]["OPT_TEMP"] == 'galaxy_single':
+            optimal_template_comb = optimal_template_out # single template
+        if config["KIN"]["OPT_TEMP"] == 'galaxy_set':
+            optimal_template_comb = optimal_template_set # selected set  from total galaxy fit
+    else:
+        optimal_template_comb = templates # all templates
+ 
+     # ====================
+    EBV_init = 0.1 # PHANGS value initial guess
     # ====================
     # Run PPXF
+
     start_time = time.time()
     if config["GENERAL"]["PARALLEL"] == True:
         printStatus.running("Running PPXF in parallel mode")
@@ -901,6 +933,7 @@ def extractStellarKinematics(config):
         dump(noise, noise_filename_memmap)
         noise = load(noise_filename_memmap, mmap_mode='r')
 
+
         # Define a function to encapsulate the work done in the loop
         def worker(chunk, templates):
             results = []
@@ -912,7 +945,8 @@ def extractStellarKinematics(config):
                     velscale,
                     start[i, :],
                     bias,
-                    goodPixels_ppxf,
+                    goodPixels_step0_kin,
+                    goodPixels_kin,
                     config["KIN"]["MOM"],
                     config["KIN"]["ADEG"],
                     config["KIN"]["MDEG"],
@@ -920,10 +954,14 @@ def extractStellarKinematics(config):
                     logLam,
                     offset,
                     velscale_ratio,
+                    ntemplates,
                     nsims,
                     nbins,
                     i,
                     optimal_template_comb,
+                    EBV_init,
+                    config,
+                    doplot,
                 )
                 results.append(result)
             return results
@@ -967,7 +1005,8 @@ def extractStellarKinematics(config):
             printStatus.running("Running PPXF in Debug mode on bins: "+str(runbin))
         else:
             runbin = np.arange(0, nbins)
-        
+
+
         for i in runbin:
             (
                 ppxf_result[i, : config["KIN"]["MOM"]],
@@ -986,7 +1025,8 @@ def extractStellarKinematics(config):
                 velscale,
                 start[i, :],
                 bias,
-                goodPixels_ppxf,
+                goodPixels_step0_kin,
+                goodPixels_kin,
                 config["KIN"]["MOM"],
                 config["KIN"]["ADEG"],
                 config["KIN"]["MDEG"],
@@ -994,11 +1034,16 @@ def extractStellarKinematics(config):
                 logLam,
                 offset,
                 velscale_ratio,
+                ntemplates,
                 nsims,
                 nbins,
                 i,
                 optimal_template_comb,
+                EBV_init,
+                config,
+                doplot,                
             )
+        
         printStatus.updateDone("Running PPXF in serial mode", progressbar=False)
 
     print(
@@ -1039,7 +1084,7 @@ def extractStellarKinematics(config):
         formal_error,
         ppxf_bestfit,
         logLam,
-        goodPixels_ppxf,
+        goodPixels_kin,
         optimal_template,
         logLam_template,
         npix,

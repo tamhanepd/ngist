@@ -37,6 +37,8 @@ def run_ppxf(
     goodPixels,
     tpl_comp,
     moments,
+    logLam,
+    logLam_template,
     offset,
     mdeg,
     fixed,
@@ -54,9 +56,17 @@ def run_ppxf(
     ui.adsabs.harvard.edu/?#abs/2017MNRAS.466..798C), in order to determine the
     non-parametric star-formation histories.
     """
-    # printStatus.progressBar(i, np.max(ubins) + 1, barLength=50)
 
     try:
+        # apply the dust correction if keyword is set:
+        # if config["KIN"]["DUST_CORR"] == True:
+                
+        #     Rv = 4.05
+        #     Av = pp_step0.dust[0]["sol"][0]
+        #     dust_step3 = [{"start": [Av], "bounds": [[0, 8]], "component": component_true_step3, "fixed":[True]}]
+
+
+
         pp = ppxf(
             templates,
             galaxy_i,
@@ -69,9 +79,11 @@ def run_ppxf(
             component=tpl_comp,
             moments=moments,
             degree=-1,
-            vsyst=offset,
+            #vsyst=offset,
             mdegree=mdeg,
-            fixed=fixed,
+            fixed=None, #fixed,
+            lam = np.exp(logLam),
+            lam_temp = np.exp(logLam_template),
             velscale_ratio=velscale_ratio,
             tied=tied,
             gas_component=gas_comp,
@@ -582,7 +594,8 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
             spectra = f['SPEC'][:]
             error = f['ESPEC'][:]
             logLam_galaxy = f['LOGLAM'][:]
-            velscale = f.attrs['VELSCALE']
+            dlog = np.mean(np.diff(logLam_galaxy)) #Overwriting for SAMI. 
+            velscale = 299792.458 * dlog   
 
         # Select the indices where the wavelength is within the specified range
         idx_lam = np.where(
@@ -600,7 +613,7 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         npix = spectra.shape[0]
         nbins = spectra.shape[1]
         ubins = np.arange(0, nbins)
-        nstmom = config["KIN"]["MOM"]  # Usually = 4
+        nstmom = config["KIN"]["MOM"]  
         # # the wav range of the data (observed)
         LamRange = (np.exp(logLam_galaxy[0]), np.exp(logLam_galaxy[-1]))
 
@@ -637,14 +650,6 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
             :4
         ]
         star_templates = templates.reshape((templates.shape[0], n_templates))
-
-        # check that template wavelength is larger than requested fit range otherwise stop
-        if (lamRange_spmod[0] >= config["GAS"]["LMIN"]) or (lamRange_spmod[1] <= config["GAS"]["LMAX"]):
-            logging.info("Template wavelength range needs to be larger than fitting range, exiting")
-            printStatus.warning(
-                "Template wavelength range needs to be larger than fitting range, exiting"
-            )
-            return
 
         offset = (logLam_template[0] - logLam_galaxy[0]) * C  # km/s
         # error        = np.ones((npix,nbins))
@@ -715,25 +720,9 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         ]
         star_templates = templates.reshape((templates.shape[0], n_templates))
 
-        # check that template wavelength is larger than requested fit range otherwise stop
-        if (lamRange_spmod[0] >= config["GAS"]["LMIN"]) or (lamRange_spmod[1] <= config["GAS"]["LMAX"]):
-            logging.info("Template wavelength range needs to be larger than fitting range, exiting")
-            printStatus.warning(
-                "Template wavelength range needs to be larger than fitting range, exiting"
-            )
-            return
-
         offset = (logLam_template[0] - logLam_galaxy[0]) * C  # km/s
 
     # --> generate the gas templates
-
-    # check that the right file is read
-    if (config["GAS"]["EMI_FILE"] != 'emissionLines_ppxf.config') and (config["GAS"]["EMI_FILE"] != 'emissionLinesPHANGS.config'):
-        logging.info("Unexpected file name for emission line config file")
-        printStatus.warning(
-            "Unexpected file name for emission line config file"
-        )
-
     # emldb=table.Table.read('./configFiles/'+config['GAS']['EMI_FILE'] , format='ascii') # Now using the PHANGS emission line config file. NB change '/configFiles' to dirPath or something like that
     emldb = table.Table.read(
         config["GENERAL"]["CONFIG_DIR"] + "/" + config["GAS"]["EMI_FILE"],
@@ -895,7 +884,7 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
     n_gas_comp = 3  # len(np.unique(tpl_comp[gas_comp]))
     n_gas_templates = ngastpl  # len(tpl_comp[gas_comp]) ngastpl defined above
 
-    # Array to store results of ppxf - come back to this, I don' think it's necc what I want?
+    # Array to store results of ppxf -
     gas_kinematics = (
         np.zeros((np.max(ubins) + 1, n_gas_comp, 2)) + np.nan
     )  # the 2 was configs['GAS_MOMENTS'], but I think we just want 2 for now
@@ -946,6 +935,8 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
                     goodPixels_gas,
                     tpl_comp,
                     moments,
+                    logLam_galaxy,
+                    logLam_template,
                     offset,
                     emi_mpol_deg,
                     fixed[i],
@@ -993,8 +984,7 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         printStatus.running("Running PPXF in serial mode")
         logging.info("Running PPXF in serial mode")
         for i in range(0, np.max(ubins) + 1):
-            # start[0]=stellar_kinematics[i, :]
-            start[0] = start[i]  # Added this in. Check if ok.
+            start[0] = start[i] 
 
             (
                 gas_kinematics[i, :, :],
@@ -1040,13 +1030,6 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         % (nbins, time.time() - start_time, config["GENERAL"]["NCPU"])
     )
 
-    # Check if there was a problem with a spectra: NOT DONE
-
-    # # add back the part of the spectrum that was truncated because of lack of templates - needed?
-    # bestfit_1 = np.zeros((nbins,npix_in))
-    # gas_bestfit_1 = np.zeros((nbins,npix_in))
-    # bestfit_1[:, wav_cov_templates]=bestfit
-    # gas_bestfit_1[:, wav_cov_templates]=gas_bestfit
 
     # tidy up the ppXF output so it matches the order to the original line-list
     (
@@ -1094,92 +1077,87 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
     sigma_final_measured = (sigma_final**2 + templates_sigma**2) ** (0.5)
 
     # save results to file
+    if config["GAS"]["LEVEL"] != "BOTH":
+        save_ppxf_emlines(
+            config,
+            config["GENERAL"]["OUTPUT"],
+            config["GENERAL"]["RUN_ID"],
+            config["GAS"]["LEVEL"],
+            linesfitted,
+            gas_flux_in_units,
+            gas_err_flux_in_units,
+            vel_final,
+            vel_err_final,
+            sigma_final_measured,
+            sigma_err_final,
+            chi2,
+            templates_sigma,
+            bestfit,
+            gas_bestfit,
+            stkin,
+            spectra,
+            error,
+            goodPixels_gas,
+            logLam_galaxy,
+            ubins,
+            npix,
+            extra,
+        )
 
-    save_ppxf_emlines(
-        config,
-        config["GENERAL"]["OUTPUT"],
-        config["GENERAL"]["RUN_ID"],
-        currentLevel,
-        linesfitted,
-        gas_flux_in_units,
-        gas_err_flux_in_units,
-        vel_final,
-        vel_err_final,
-        sigma_final_measured,
-        sigma_err_final,
-        chi2,
-        templates_sigma,
-        bestfit,
-        gas_bestfit,
-        stkin,
-        spectra,
-        error,
-        goodPixels_gas,
-        logLam_galaxy,
-        ubins,
-        npix,
-        extra,
-    )
+    if (
+        config["GAS"]["LEVEL"] == "BOTH"
+    ):  # Special case when wanting the gas in bin and spaxel modes
+        save_ppxf_emlines(
+            config,
+            config["GENERAL"]["OUTPUT"],
+            config["GENERAL"]["RUN_ID"],
+            "BIN",
+            linesfitted,
+            gas_flux_in_units,
+            gas_err_flux_in_units,
+            vel_final,
+            vel_err_final,
+            sigma_final_measured,
+            sigma_err_final,
+            chi2,
+            templates_sigma,
+            bestfit,
+            gas_bestfit,
+            stkin,
+            spectra,
+            error,
+            goodPixels_gas,
+            logLam_galaxy,
+            ubins,
+            npix,
+            extra,
+        )
 
- #   if (
- #       config["GAS"]["LEVEL"] == "BOTH"
- #   ):  # Special case when wanting the gas in bin and spaxel modes
- #       save_ppxf_emlines(
- #           config,
- #           config["GENERAL"]["OUTPUT"],
- #           config["GENERAL"]["RUN_ID"],
- #           "BIN",
- #           linesfitted,
- #           gas_flux_in_units,
- #           gas_err_flux_in_units,
- #           vel_final,
- #           vel_err_final,
- #           sigma_final_measured,
- #           sigma_err_final,
- #           chi2,
- #           templates_sigma,
- #           bestfit,
- #           gas_bestfit,
- #           stkin,
- #           spectra,
- #           error,
- #           goodPixels_gas,
- #           logLam_galaxy,
- #           ubins,
- #           npix,
- #           extra,
- #       )
-#
- #       save_ppxf_emlines(
- #           config,
- #           config["GENERAL"]["OUTPUT"],
- #           config["GENERAL"]["RUN_ID"],
- #           "SPAXEL",
- #           linesfitted,
- #           gas_flux_in_units,
- #           gas_err_flux_in_units,
- #           vel_final,
- #           vel_err_final,
- #           sigma_final_measured,
- #           sigma_err_final,
- #           chi2,
- #           templates_sigma,
- #           bestfit,
- #           gas_bestfit,
- #           stkin,
- #           spectra,
- #           error,
- #           goodPixels_gas,
- #           logLam_galaxy,
- #           ubins,
- #           npix,
- #           extra,
- #       )
-
-    # Restart pPPXF if a SPAXEL level run based on a previous BIN level run is intended
-    if config["GAS"]["LEVEL"] == "BOTH" and currentLevel == "BIN":
-        print()
-        performEmissionLineAnalysis(config)
+        save_ppxf_emlines(
+            config,
+            config["GENERAL"]["OUTPUT"],
+            config["GENERAL"]["RUN_ID"],
+            "SPAXEL",
+            linesfitted,
+            gas_flux_in_units,
+            gas_err_flux_in_units,
+            vel_final,
+            vel_err_final,
+            sigma_final_measured,
+            sigma_err_final,
+            chi2,
+            templates_sigma,
+            bestfit,
+            gas_bestfit,
+            stkin,
+            spectra,
+            error,
+            goodPixels_gas,
+            logLam_galaxy,
+            ubins,
+            npix,
+            extra,
+        )
 
     printStatus.updateDone("Emission line fitting done")
     # print("")

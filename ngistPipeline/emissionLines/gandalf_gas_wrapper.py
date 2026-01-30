@@ -7,9 +7,10 @@ from astropy.io import fits
 from astropy.table import Table
 from multiprocess import Process, Queue
 from printStatus import printStatus
+import h5py
 
 from ngistPipeline.auxiliary import _auxiliary
-from ngistPipeline.emissionLines.pyGandalf import gandalf_util as gandalf
+from ngistPipeline.emissionLines.Gandalf import gandalf_util as gandalf
 from ngistPipeline.prepareTemplates import _prepareTemplates
 
 # PHYSICAL CONSTANTS
@@ -188,11 +189,11 @@ def save_gandalf(
     outfits = (
         os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
         + "_gas_"
-        + currentLevel
+        + currentLevel.lower()
         + ".fits"
     )
     printStatus.running(
-        "Writing: " + config["GENERAL"]["RUN_ID"] + "_gas_" + currentLevel + ".fits"
+        "Writing: " + config["GENERAL"]["RUN_ID"] + "_gas_" + currentLevel.lower() + ".fits"
     )
 
     # Primary HDU
@@ -252,7 +253,7 @@ def save_gandalf(
     HDUList.writeto(outfits, overwrite=True)
 
     printStatus.updateDone(
-        "Writing: " + config["GENERAL"]["RUN_ID"] + "_gas_" + currentLevel + ".fits"
+        "Writing: " + config["GENERAL"]["RUN_ID"] + "_gas_" + currentLevel.lower() + ".fits"
     )
     logging.info("Wrote: " + outfits)
 
@@ -260,15 +261,15 @@ def save_gandalf(
     # SAVE BESTFIT
     outfits = (
         os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-        + "_gas-bestfit_"
-        + currentLevel
+        + "_gas_bestfit_"
+        + currentLevel.lower()
         + ".fits"
     )
     printStatus.running(
         "Writing: "
         + config["GENERAL"]["RUN_ID"]
-        + "_gas-bestfit_"
-        + currentLevel
+        + "_gas_bestfit_"
+        + currentLevel.lower()
         + ".fits"
     )
 
@@ -307,8 +308,8 @@ def save_gandalf(
     printStatus.updateDone(
         "Writing: "
         + config["GENERAL"]["RUN_ID"]
-        + "_gas-bestfit_"
-        + currentLevel
+        + "_gas_bestfit_"
+        + currentLevel.lower()
         + ".fits"
     )
     logging.info("Wrote: " + outfits)
@@ -317,15 +318,15 @@ def save_gandalf(
     # SAVE EMISSION
     outfits = (
         os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-        + "_gas-emission_"
-        + currentLevel
+        + "_gas_emission_"
+        + currentLevel.lower()
         + ".fits"
     )
     printStatus.running(
         "Writing: "
         + config["GENERAL"]["RUN_ID"]
-        + "_gas-emission_"
-        + currentLevel
+        + "_gas_emission_"
+        + currentLevel.lower()
         + ".fits"
     )
 
@@ -354,8 +355,8 @@ def save_gandalf(
     printStatus.updateDone(
         "Writing: "
         + config["GENERAL"]["RUN_ID"]
-        + "_gas-emission_"
-        + currentLevel
+        + "_gas_emission_"
+        + currentLevel.lower()
         + ".fits"
     )
     logging.info("Wrote: " + outfits)
@@ -364,15 +365,15 @@ def save_gandalf(
     # SAVE CLEANED SPECTRA
     outfits = (
         os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-        + "_gas-cleaned_"
-        + currentLevel
+        + "_gas_cleaned_"
+        + currentLevel.lower()
         + ".fits"
     )
     printStatus.running(
         "Writing: "
         + config["GENERAL"]["RUN_ID"]
-        + "_gas-cleaned_"
-        + currentLevel
+        + "_gas_cleaned_"
+        + currentLevel.lower()
         + ".fits"
     )
 
@@ -404,8 +405,8 @@ def save_gandalf(
     printStatus.updateDone(
         "Writing: "
         + config["GENERAL"]["RUN_ID"]
-        + "_gas-cleaned_"
-        + currentLevel
+        + "_gas_cleaned_"
+        + currentLevel.lower()
         + ".fits"
     )
     logging.info("Wrote: " + outfits)
@@ -417,15 +418,15 @@ def save_gandalf(
     ):
         outfits = (
             os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_gas-weights_"
-            + currentLevel
+            + "_gas_weights_"
+            + currentLevel.lower()
             + ".fits"
         )
         printStatus.running(
             "Writing: "
             + config["GENERAL"]["RUN_ID"]
-            + "_gas-weights_"
-            + currentLevel
+            + "_gas_weights_"
+            + currentLevel.lower()
             + ".fits"
         )
 
@@ -463,8 +464,8 @@ def save_gandalf(
         printStatus.updateDone(
             "Writing: "
             + config["GENERAL"]["RUN_ID"]
-            + "_gas-weights_"
-            + currentLevel
+            + "_gas_weights_"
+            + currentLevel.lower()
             + ".fits"
         )
         logging.info("Wrote: " + outfits)
@@ -474,15 +475,15 @@ def save_gandalf(
     if currentLevel == "BIN":
         outfits = (
             os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_gas-optimalTemplate_"
-            + currentLevel
+            + "_gas_optimal_template_"
+            + currentLevel.lower()
             + ".fits"
         )
         printStatus.running(
             "Writing: "
             + config["GENERAL"]["RUN_ID"]
-            + "_gas-optimalTemplate_"
-            + currentLevel
+            + "_gas_optimal_template_"
+            + currentLevel.lower()
             + ".fits"
         )
 
@@ -520,8 +521,8 @@ def save_gandalf(
         printStatus.updateDone(
             "Writing: "
             + config["GENERAL"]["RUN_ID"]
-            + "_gas-optimalTemplate_"
-            + currentLevel
+            + "_gas_optimal_template_"
+            + currentLevel.lower()
             + ".fits"
         )
         logging.info("Wrote: " + outfits)
@@ -538,6 +539,14 @@ def getGoodpixelsEmissionSetup(
        fits
     """
     # Read in emission-line setup file
+
+    # check that the right file is read
+    if (config["GAS"]["EMI_FILE"] != 'emissionLines_gandalf.config') and (config["GAS"]["EMI_FILE"] != 'emissionLines.config'):
+        logging.info("Unexpected file name for emission line config file")
+        printStatus.warning(
+            "Unexpected file name for emission line config file"
+        )
+
     eml_file = os.path.join(config["GENERAL"]["CONFIG_DIR"], config["GAS"]["EMI_FILE"])
     eml_i = np.genfromtxt(eml_file, dtype="int", usecols=(0), comments="#")
     eml_name = np.genfromtxt(eml_file, dtype="str", usecols=(1), comments="#")
@@ -602,14 +611,6 @@ def performEmissionLineAnalysis(config):
     fit, emission-subtracted spectral are calculated. Results are saved to disk.
     """
 
-    #    # Check if the error estimation in pyGandalf is turned off
-    #    if config['GAS']['ERRORS'] != 0:
-    #        printStatus.warning("It is currently not possible to derive errors with pyGandALF in a Python3 environment. An updated version of pyGandALF will be released soon.")
-    #        printStatus.warning("The emission-line analysis continues without an error estimation.")
-    #        logging.warning("It is currently not possible to derive errors with pyGandALF in a Python3 environment. An updated version of pyGandALF will be released soon.")
-    #        logging.warning("The emission-line analysis continues without an error estimation.")
-    #        config['GAS']['ERRORS'] = 0
-
     # Check if proper configuration is set
     if config["GAS"]["LEVEL"] not in ["BIN", "SPAXEL", "BOTH"]:
         message = "Configuration parameter GAS|SPAXEL has to be either 'BIN', 'SPAXEL', or 'BOTH'."
@@ -624,7 +625,7 @@ def performEmissionLineAnalysis(config):
         config["GAS"]["LEVEL"] == "BOTH"
         and os.path.isfile(
             os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_gas_BIN.fits"
+            + "_gas_bin.fits"
         )
         == False
     ):
@@ -633,7 +634,7 @@ def performEmissionLineAnalysis(config):
         config["GAS"]["LEVEL"] == "BOTH"
         and os.path.isfile(
             os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_gas_BIN.fits"
+            + "_gas_bin.fits"
         )
         == True
     ):
@@ -647,13 +648,23 @@ def performEmissionLineAnalysis(config):
 
     # Read data if we run on BIN level
     if currentLevel == "BIN":
-        # Read spectra from file
-        hdu = fits.open(
-            os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_BinSpectra.fits"
-        )
-        spectra = np.array(hdu[1].data.SPEC.T)
-        logLam_galaxy = np.array(hdu[2].data.LOGLAM)
+    # Read spectra
+        hdf5_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_bin_spectra.hdf5"
+        fits_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_bin_spectra.fits"
+
+        if os.path.isfile(hdf5_file):
+            with h5py.File(hdf5_file, 'r') as f:
+                spectra = f['SPEC'][:]
+                logLam_galaxy = f['LOGLAM'][:]
+                error = f['ESPEC'][:]
+                velscale = f.attrs["VELSCALE"]
+        else:
+            print(hdf5_file + " does not exist. Trying " + fits_file)
+            spectra = np.array(fits.open(fits_file)[1].data.SPEC.T)
+            error = np.array(fits.open(fits_file)[1].data.ESPEC.T)
+            logLam_galaxy = np.array(fits.open(fits_file)[2].data.LOGLAM)
+            velscale = hdu[0].header["VELSCALE"]
+
         idx_lam = np.where(
             np.logical_and(
                 np.exp(logLam_galaxy) > config["GAS"]["LMIN"],
@@ -661,10 +672,10 @@ def performEmissionLineAnalysis(config):
             )
         )[0]
         spectra = spectra[idx_lam, :]
+        error = error[idx_lam, :]  # AJB added
         logLam_galaxy = logLam_galaxy[idx_lam]
         npix = spectra.shape[0]
         nbins = spectra.shape[1]
-        velscale = hdu[0].header["VELSCALE"]
 
         # Create empty mask in bin-level run: There are no masked bins, only masked spaxels!
         maskedSpaxel = np.zeros(nbins, dtype=bool)
@@ -691,7 +702,7 @@ def performEmissionLineAnalysis(config):
         templates = templates.reshape((templates.shape[0], n_templates))
 
         offset = (logLam_template[0] - logLam_galaxy[0]) * C  # km/s
-        error = np.ones((npix, nbins))
+        # error        = np.ones((npix,nbins))
 
         # Read stellar kinematics from file
         ppxf = fits.open(
@@ -705,17 +716,29 @@ def performEmissionLineAnalysis(config):
         stellar_kin[:, 3] = np.array(ppxf.H4)
 
         # Rename to keep the code clean
-        for_errors = config["GAS"]["ERRORS"]
+        # for_errors = config['GAS']['ERRORS']
+        for_errors = 0  # JTM - hard-coded to not run uncertainties on bin fits
 
     # Read data if we run on SPAXEL level
-    elif currentLevel == "SPAXEL":
-        # Read spectra from file
-        hdu = fits.open(
-            os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_AllSpectra.fits"
-        )
-        spectra = np.array(hdu[1].data.SPEC.T)
-        logLam_galaxy = np.array(hdu[2].data.LOGLAM)
+    elif currentLevel == "SPAXEL":    
+        # Read spectra
+        hdf5_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_all_spectra.hdf5"
+        fits_file = os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])+ "_all_spectra.fits"
+
+        if os.path.isfile(hdf5_file):
+            with h5py.File(hdf5_file, 'r') as f:
+                spectra = f['SPEC'][:]
+                logLam_galaxy = f['LOGLAM'][:]
+                error = f['ESPEC'][:]
+                velscale = f.attrs["VELSCALE"]
+        else:
+            print(hdf5_file + " does not exist. Trying " + fits_file)
+            spectra = np.array(fits.open(fits_file)[1].data.SPEC.T)
+            error = np.array(fits.open(fits_file)[1].data.ESPEC.T)
+            logLam_galaxy = np.array(fits.open(fits_file)[2].data.LOGLAM)
+            velscale = hdu[0].header["VELSCALE"]
+            ##
+
         idx_lam = np.where(
             np.logical_and(
                 np.exp(logLam_galaxy) > config["GAS"]["LMIN"],
@@ -723,10 +746,11 @@ def performEmissionLineAnalysis(config):
             )
         )[0]
         spectra = spectra[idx_lam, :]
+        error = error[idx_lam, :]  # AJB added
         logLam_galaxy = logLam_galaxy[idx_lam]
         npix = spectra.shape[0]
         nbins = spectra.shape[1]
-        velscale = hdu[0].header["VELSCALE"]
+
 
         # Construct mask for defunct spaxels
         mask = fits.open(
@@ -761,14 +785,14 @@ def performEmissionLineAnalysis(config):
             )
             hdu = fits.open(
                 os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-                + "_gas-optimalTemplate_BIN.fits"
+                + "_gas_optimal_template_bin.fits"
             )
             templates = np.array(hdu[1].data.OPTIMAL_TEMPLATE.T)
             logLam_template = np.array(hdu[2].data.LOGLAM_TEMPLATE)
             n_templates = 1
             printStatus.done("Preparing the stellar population templates")
         offset = (logLam_template[0] - logLam_galaxy[0]) * C  # km/s
-        error = np.ones((npix, nbins))
+        # error       = np.ones((npix,nbins))
 
         # Read stellar kinematics from file
         ppxf = fits.open(
@@ -812,19 +836,6 @@ def performEmissionLineAnalysis(config):
         np.array(LSF_Data(np.exp(logLam_galaxy))) / 2.355 / np.exp(logLam_galaxy)
     )
 
-    # Deredden the spectra for the Galactic extinction in the direction of the target
-    if config["GAS"]["EBmV"] != None:
-        dereddening_attenuation = gandalf.dust_calzetti(
-            logLam_galaxy[0],
-            logLam_galaxy[1] - logLam_galaxy[0],
-            npix,
-            -1 * config["GAS"]["EBmV"],
-            0.0,
-            0,
-        )
-        for i in range(spectra.shape[1]):
-            spectra[:, i] = spectra[:, i] * dereddening_attenuation
-
     # Get goodpixels and emission_setup
     goodpixels, emission_setup = getGoodpixelsEmissionSetup(
         config, 0.0, velscale, logLam_galaxy, logLam_template, npix
@@ -836,15 +847,22 @@ def performEmissionLineAnalysis(config):
         if emission_setup[itm].action == "f" and emission_setup[itm].kind == "l":
             nlines += 1
 
-    if config["GAS"]["REDDENING"] == False:
+    gas_cfg = config["GAS"]
+    # check for new DUST_CORR and old REDDENING keyword
+    dust_corr = gas_cfg.get(
+        "DUST_CORR",
+        gas_cfg.get("REDDENING", False)
+    )
+
+    if dust_corr == False:
         reddening = None
         mdegree = config["GAS"]["MDEG"]
         reddening_length_sol = config["GAS"]["MDEG"]
         reddening_length_esol = 0
     else:
         reddening = [
-            float(config["GAS"]["REDDENING"].split(",")[0].strip()),
-            float(config["GAS"]["REDDENING"].split(",")[1].strip()),
+            float(dust_corr.split(",")[0].strip()),
+            float(dust_corr.split(",")[1].strip()),
         ]
         mdegree = 0
         reddening_length_sol = 2
@@ -1096,7 +1114,8 @@ def performEmissionLineAnalysis(config):
 
     # Calculate the best fitting emission
     emissionSpectrum = np.sum(emission_templates, axis=2)
-    emissionSubtractedBestfit = bestfit - emissionSpectrum
+    # not being used at the moment?
+    #emissionSubtractedBestfit = bestfit - emissionSpectrum
 
     # Save results to file
     save_gandalf(

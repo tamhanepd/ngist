@@ -2,7 +2,7 @@
 
 # ==================================================================================================================== #
 #                                                                                                                      #
-#                                          T H E   G I S T   P I P E L I N E                                           #
+#                                          T H E   nG I S T   P I P E L I N E                                          #
 #                                                                                                                      #
 # ==================================================================================================================== #
 
@@ -45,11 +45,12 @@ from ngistPipeline.spatialMasking import _spatialMasking
 from ngistPipeline.starFormationHistories import _starFormationHistories
 from ngistPipeline.stellarKinematics import _stellarKinematics
 from ngistPipeline.userModules import _userModules
+from ngistPipeline.writeHTML import _writeHTML
 
 
 def skipGalaxy(config):
     # _auxiliary.addGISTHeaderComment(config)
-    printStatus.module("The GIST pipeline")
+    printStatus.module("The nGIST pipeline")
     printStatus.failed("Galaxy is skipped!")
     logging.critical("Galaxy is skipped!")
 
@@ -165,6 +166,13 @@ def runGIST(dirPath, galindex):
         skipGalaxy(config)
         return None
 
+    # - - - - - CREATE HTML - - - - -
+
+    if config["GENERAL"].get("CREATE_HTML", False):
+        _ = _writeHTML.writeHTML(config)
+        if _ == "SKIP":
+            skipGalaxy(config)
+            return None
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     # - - - - - - - -  F I N A L I S E   T H E   A N A L Y S I S  - - - - - - - - -
