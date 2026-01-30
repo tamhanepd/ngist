@@ -16,7 +16,6 @@ def set_debug(cube, xext, yext):
     logging.info(
         "DEBUG mode is activated. Instead of the entire cube, only one line of spaxels is used."
     )
-    print(xext,yext)
     cube["x"] = cube["x"][int(yext / 2) * xext : (int(yext / 2) + 1) * xext]
     cube["y"] = cube["y"][int(yext / 2) * xext : (int(yext / 2) + 1) * xext]
     cube["snr"] = cube["snr"][int(yext / 2) * xext : (int(yext / 2) + 1) * xext]
@@ -98,7 +97,7 @@ def readCube(config):
             extinction_curve, spec
         )  # spec may need to be 'data'
         spec = spec / reshaped_extinction_curve  # spec may need to be data
-        espec = np.power(np.sqrt(espec) / reshaped_extinction_curve, 2) # espec is variance, but noise needs to be extinction corrected
+        espec = espec / reshaped_extinction_curve
     else:
         spec = spec  # Don't do anything to the spectra if no dust value given
         espec = espec
@@ -179,22 +178,13 @@ def readCube(config):
         "wcshdr": wcshdr,
     }
 
-    # constrain to one row, or subset of pixels from one row if switch DEBUG is set
-    debug = config["READ_DATA"]["DEBUG"]
-    if debug is False:
-        printStatus.updateDone(
-            "Done reading " + str(len(cube["x"])) + " spectra from the MUSE-WFM cube")
-    elif debug is True:
+    # Constrain cube to one central row if switch DEBUG is set
+    if config["READ_DATA"]["DEBUG"] == True:
         cube = set_debug(cube, s[2], s[1])
-        printStatus.updateDone(
-            "Done reading " + str(len(cube["x"])) + " spectra from the MUSE-WFM cube")
-    elif isinstance(debug, int):
-        # integer debug value
-        cube = set_debug(cube, min(debug, s[2]), s[1])
-        printStatus.updateDone(
-            "Done reading " + str(len(cube["x"])) + " spectra from the MUSE-WFM cube")
-    else:
-        raise ValueError(f"Unsupported DEBUG value: {debug}")
+
+    printStatus.updateDone(
+        "Done reading " + str(len(cube["x"])) + " spectra from the MUSE-WFM cube"
+    )
 
     logging.info(
         "Finished reading the MUSE cube! Read a total of "

@@ -6,7 +6,7 @@ from printStatus import printStatus
 
 
 def prepareTemplates_Module(
-    config, lmin, lmax, velscale, LSF_Data, LSF_Templates, module_used, sortInGrid=False, manga=False
+    config, lmin, lmax, velscale, LSF_Data, LSF_Templates, module_used, sortInGrid=False
 ):
     """
     This function calls the prepareTemplates routine specified by the user.

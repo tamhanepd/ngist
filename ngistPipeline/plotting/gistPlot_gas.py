@@ -385,10 +385,10 @@ def plot_line(
         # Save plot in non-interactive mode or when called from within the pipeline
         plt.savefig(
             os.path.join(outdir, rootname)
-            + "_gas_"
+            + "_gas-"
             + lineIdentifier
             + "_"
-            + LEVEL.lower()
+            + LEVEL
             + ".pdf",
             bbox_inches="tight",
             pad_inches=0.3,
@@ -433,15 +433,15 @@ def plotMaps(
 
     # Read Gandalf results
     if LEVEL == "SPAXEL":
-        results = fits.open(os.path.join(outdir, rootname) + "_gas_spaxel.fits")[
+        results = fits.open(os.path.join(outdir, rootname) + "_gas_SPAXEL.fits")[
             1
         ].data[~maskedSpaxel]
         results2 = Table.read(
-            os.path.join(outdir, rootname) + "_gas_spaxel.fits"
+            os.path.join(outdir, rootname) + "_gas_SPAXEL.fits"
         )  # Need the column names
     elif LEVEL == "BIN":
-        results = fits.open(os.path.join(outdir, rootname) + "_gas_bin.fits")[1].data
-        results2 = Table.read(os.path.join(outdir, rootname) + "_gas_bin.fits")
+        results = fits.open(os.path.join(outdir, rootname) + "_gas_BIN.fits")[1].data
+        results2 = Table.read(os.path.join(outdir, rootname) + "_gas_BIN.fits")
     # Convert results to long version
     if LEVEL == "BIN":
         _, idxConvert = np.unique(np.abs(binNum_long), return_inverse=True)

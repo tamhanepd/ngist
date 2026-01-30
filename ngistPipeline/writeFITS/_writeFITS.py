@@ -75,7 +75,7 @@ def generateFITS(config, module):
     if module == "GAS":
         try:
             printStatus.running("Producing FITS maps from the emission-line analysis")
-            if os.path.isfile(outputPrefix + "_gas_bin.fits") == True:
+            if os.path.isfile(outputPrefix + "_gas_BIN.fits") == True:
                 if config["GAS"]["LEVEL"] == "BIN": #And we aren't running in BOTH mode
                     save_maps_fits.savefitsmaps_GASmodule(
                         "gas",
@@ -83,7 +83,7 @@ def generateFITS(config, module):
                         LEVEL=config["GAS"]["LEVEL"],
                         AoNThreshold=4,
                     )
-            if os.path.isfile(outputPrefix + "_gas_spaxel.fits") == True:
+            if os.path.isfile(outputPrefix + "_gas_SPAXEL.fits") == True:
                 if config["GAS"]["LEVEL"] == 'SPAXEL': #And we aren't running in BOTH mode
                     save_maps_fits.savefitsmaps_GASmodule(
                         "gas",
@@ -91,10 +91,10 @@ def generateFITS(config, module):
                         LEVEL=config["GAS"]["LEVEL"],
                         AoNThreshold=4,
                     )
-            if os.path.isfile(outputPrefix + "_gas_bin.fits") == True and os.path.isfile(outputPrefix + "_gas_spaxel.fits") == True:
+            if os.path.isfile(outputPrefix + "_gas_BIN.fits") == True and os.path.isfile(outputPrefix + "_gas_SPAXEL.fits") == True:
                 if config["GAS"]["LEVEL"] == 'BOTH': # Special case for running in BOTH mode
                     # Run first to create the _BIN maps
-                    printStatus.running('First run-through to save bin results')
+                    print('First run-through to save bin results')
                     save_maps_fits.savefitsmaps_GASmodule(
                         "gas",
                         config["GENERAL"]["OUTPUT"],
@@ -102,7 +102,7 @@ def generateFITS(config, module):
                         AoNThreshold=4,
                     )
                     # Then run to create the SPAXEL maps
-                    printStatus.running('second run through to save SPAXEL results')
+                    print('second run through to save SPAXEL results')
                     save_maps_fits.savefitsmaps_GASmodule(
                         "gas",
                         config["GENERAL"]["OUTPUT"],

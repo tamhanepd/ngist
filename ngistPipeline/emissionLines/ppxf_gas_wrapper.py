@@ -24,7 +24,7 @@ C = 299792.458  # speed of light in km/s
 PURPOSE:
   This module executes the emission-line analysis of the pipeline.
   Uses the pPXF implementation, replacing Gandalf.
-  Module written for ngist-geckos based on the ngist SFH module
+  Module written for gist-geckos based on the gist SFH module
   combined with the PHANGS DAP emission line module.
 """
 
@@ -256,10 +256,10 @@ def save_ppxf_emlines(
 ):
     # ========================
     # SAVE RESULTS
-    outfits_ppxf = rootname + "/" + outdir + "_gas_" + level.lower() + ".fits"
+    outfits_ppxf = rootname + "/" + outdir + "_gas_" + level + ".fits"
     printStatus.running("Writing: " + outfits_ppxf.split("/")[-1])
     printStatus.running(
-        "Writing: " + config["GENERAL"]["RUN_ID"] + "_gas_" + level.lower() + ".fits"
+        "Writing: " + config["GENERAL"]["RUN_ID"] + "_gas_" + level + ".fits"
     )
 
     # Primary HDU
@@ -332,24 +332,10 @@ def save_ppxf_emlines(
         oiii_idx = np.where(names == 'OIII5006')
         ha_idx = np.where(names == 'Ha6562')
         nii_idx = np.where(names == 'NII6583')
-        
-        # Correct for internal extinction using the Balmer decrement.
-        Ha_on_Hb_obs = gas_flux_in_units[:,ha_idx]/gas_flux_in_units[:,hb_idx]
-        EBminV = (np.log10(Ha_on_Hb_obs/2.86)) / (0.4*(3.588-2.517)) #k(Hbeta), k(Halpha), eqn 5 of Poetrodjojo et al. 2021
-        k_Hb = 3.588 #These values are from Boselli+2013, Table 4
-        k_OIII_5007 = 3.452
-        k_Ha = 2.517
-        k_NII_6584 = 2.507
-        A_HBETA = EBminV*3.588
-        HBETA = A_HBETA*gas_flux_in_units[:,hb_idx]
-        A_OIII_5007 = EBminV*k_OIII_5007
-        OIII_5007 = A_OIII_5007*gas_flux_in_units[:,oiii_idx]
-        A_NII_6584 = EBminV*k_NII_6584
-        NII_6584 = A_NII_6584*gas_flux_in_units[:,nii_idx]
-        A_HA =  EBminV*k_Ha
-        HALPHA = A_HA*gas_flux_in_units[:,ha_idx]
-        l_nii_ha = np.log10(NII_6584/HALPHA)
-        l_oiii_hb = np.log10(OIII_5007/HBETA)
+
+        l_nii_ha = np.log10(gas_flux_in_units[:,nii_idx]/gas_flux_in_units[:,ha_idx])
+        l_oiii_hb = np.log10(gas_flux_in_units[:,oiii_idx]/gas_flux_in_units[:,hb_idx])
+#             l_sii_ha = np.log10((Sii_6717+Sii_6730)/Ha)     
 
         niihabpt = np.zeros((len(gas_flux_in_units)))
         for i in range(0,len(gas_flux_in_units)):
@@ -371,26 +357,8 @@ def save_ppxf_emlines(
         sii6716_idx = np.where(names == 'SII6716')
         sii6730_idx = np.where(names == 'SII6730')
 
-        # Correct for internal extinction using the Balmer decrement.
-        Ha_on_Hb_obs = gas_flux_in_units[:,ha_idx]/gas_flux_in_units[:,hb_idx]
-        EBminV = (np.log10(Ha_on_Hb_obs/2.86)) / (0.4*(3.588-2.517)) #k(Hbeta), k(Halpha), eqn 5 of Poetrodjojo et al. 2021
-        k_Hb = 3.588 #These values are from Boselli+2013, Table 4
-        k_OIII_5007 = 3.452
-        k_Ha = 2.517
-        k_SII_6717 = 2.444
-        k_SII_6731 = 2.437        
-        A_HBETA = EBminV*3.588
-        HBETA = A_HBETA*gas_flux_in_units[:,hb_idx]
-        A_OIII_5007 = EBminV*k_OIII_5007
-        OIII_5007 = A_OIII_5007*gas_flux_in_units[:,oiii_idx]
-        A_HA =  EBminV*k_Ha
-        HALPHA = A_HA*gas_flux_in_units[:,ha_idx]
-        A_SII_6717 = EBminV*k_SII_6717
-        A_SII_6731 = EBminV*k_SII_6731
-        SII_6717 = A_SII_6717*gas_flux_in_units[:,sii6716_idx]
-        SII_6731 = A_SII_6731*gas_flux_in_units[:,sii6730_idx] 
-        l_oiii_hb = np.log10(OIII_5007/HBETA)
-        l_sii_ha = np.log10((SII_6717+SII_6731)/HALPHA) 
+        l_oiii_hb = np.log10(gas_flux_in_units[:,oiii_idx]/gas_flux_in_units[:,hb_idx])
+        l_sii_ha = np.log10((gas_flux_in_units[:,sii6716_idx]+gas_flux_in_units[:,sii6730_idx])/gas_flux_in_units[:,ha_idx])     
 
         siihabpt = np.zeros((len(gas_flux_in_units)))
         for i in range(0,len(gas_flux_in_units)):
@@ -416,7 +384,7 @@ def save_ppxf_emlines(
 
     # ========================
     # SAVE CLEANED SPECTRUM
-    outfits_ppxf = rootname + "/" + outdir + "_gas_cleaned_" + level.lower() + ".fits"
+    outfits_ppxf = rootname + "/" + outdir + "_gas-cleaned_" + level + ".fits"
     printStatus.running("Writing: " + outfits_ppxf.split("/")[-1])
     cleaned = spectra.T - gas_bestfit
     spec = spectra.T
@@ -464,7 +432,7 @@ def save_ppxf_emlines(
 
     # ========================
     # SAVE BESTFIT
-    outfits_ppxf = rootname + "/" + outdir + "_gas_bestfit_" + level.lower() + ".fits"
+    outfits_ppxf = rootname + "/" + outdir + "_gas-bestfit_" + level + ".fits"
     printStatus.running("Writing: " + outfits_ppxf.split("/")[-1])
     # cleaned = spectra.T - gas_bestfit
     spec = spectra.T
@@ -550,7 +518,7 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         config["GAS"]["LEVEL"] == "BOTH"
         and os.path.isfile(
             os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_gas_bin.fits"  # If you haven't already created the BIN products
+            + "_gas_BIN.fits"  # If you haven't already created the BIN products
         )
         == False
     ):
@@ -559,12 +527,12 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         config["GAS"]["LEVEL"] == "BOTH"
         and os.path.isfile(
             os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"])
-            + "_gas_bin.fits"  # If you have created BIN products, move on to SPAXEL
+            + "_gas_BIN.fits"  # If you have created BIN products, move on to SPAXEL
         )
         == True
     ):
         currentLevel = "SPAXEL"
-        
+        print("currentLevel = %s" % (currentLevel))
     # Oversample the templates by a factor of two
     velscale_ratio = 2
 
@@ -577,7 +545,7 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
     # Read data if we run on BIN level
     if currentLevel == "BIN":
         # Open the HDF5 file
-        with h5py.File(os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_bin_spectra.hdf5", 'r') as f:
+        with h5py.File(os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_BinSpectra.hdf5", 'r') as f:
             # Read the data from the file
             spectra = f['SPEC'][:]
             error = f['ESPEC'][:]
@@ -638,14 +606,6 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         ]
         star_templates = templates.reshape((templates.shape[0], n_templates))
 
-        # check that template wavelength is larger than requested fit range otherwise stop
-        if (lamRange_spmod[0] >= config["GAS"]["LMIN"]) or (lamRange_spmod[1] <= config["GAS"]["LMAX"]):
-            logging.info("Template wavelength range needs to be larger than fitting range, exiting")
-            printStatus.warning(
-                "Template wavelength range needs to be larger than fitting range, exiting"
-            )
-            return
-
         offset = (logLam_template[0] - logLam_galaxy[0]) * C  # km/s
         # error        = np.ones((npix,nbins))
         ## --------------------- ##
@@ -653,7 +613,7 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
     if currentLevel == "SPAXEL":
 
         # Open the HDF5 file
-        with h5py.File(os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_all_spectra.hdf5", 'r') as f:
+        with h5py.File(os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_AllSpectra.hdf5", 'r') as f:
             # Read the data from the file
             spectra = f['SPEC'][:]
             error = f['ESPEC'][:]
@@ -715,25 +675,9 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         ]
         star_templates = templates.reshape((templates.shape[0], n_templates))
 
-        # check that template wavelength is larger than requested fit range otherwise stop
-        if (lamRange_spmod[0] >= config["GAS"]["LMIN"]) or (lamRange_spmod[1] <= config["GAS"]["LMAX"]):
-            logging.info("Template wavelength range needs to be larger than fitting range, exiting")
-            printStatus.warning(
-                "Template wavelength range needs to be larger than fitting range, exiting"
-            )
-            return
-
         offset = (logLam_template[0] - logLam_galaxy[0]) * C  # km/s
 
     # --> generate the gas templates
-
-    # check that the right file is read
-    if (config["GAS"]["EMI_FILE"] != 'emissionLines_ppxf.config') and (config["GAS"]["EMI_FILE"] != 'emissionLinesPHANGS.config'):
-        logging.info("Unexpected file name for emission line config file")
-        printStatus.warning(
-            "Unexpected file name for emission line config file"
-        )
-
     # emldb=table.Table.read('./configFiles/'+config['GAS']['EMI_FILE'] , format='ascii') # Now using the PHANGS emission line config file. NB change '/configFiles' to dirPath or something like that
     emldb = table.Table.read(
         config["GENERAL"]["CONFIG_DIR"] + "/" + config["GAS"]["EMI_FILE"],
@@ -1094,92 +1038,87 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
     sigma_final_measured = (sigma_final**2 + templates_sigma**2) ** (0.5)
 
     # save results to file
+    if config["GAS"]["LEVEL"] != "BOTH":
+        save_ppxf_emlines(
+            config,
+            config["GENERAL"]["OUTPUT"],
+            config["GENERAL"]["RUN_ID"],
+            config["GAS"]["LEVEL"],
+            linesfitted,
+            gas_flux_in_units,
+            gas_err_flux_in_units,
+            vel_final,
+            vel_err_final,
+            sigma_final_measured,
+            sigma_err_final,
+            chi2,
+            templates_sigma,
+            bestfit,
+            gas_bestfit,
+            stkin,
+            spectra,
+            error,
+            goodPixels_gas,
+            logLam_galaxy,
+            ubins,
+            npix,
+            extra,
+        )
 
-    save_ppxf_emlines(
-        config,
-        config["GENERAL"]["OUTPUT"],
-        config["GENERAL"]["RUN_ID"],
-        currentLevel,
-        linesfitted,
-        gas_flux_in_units,
-        gas_err_flux_in_units,
-        vel_final,
-        vel_err_final,
-        sigma_final_measured,
-        sigma_err_final,
-        chi2,
-        templates_sigma,
-        bestfit,
-        gas_bestfit,
-        stkin,
-        spectra,
-        error,
-        goodPixels_gas,
-        logLam_galaxy,
-        ubins,
-        npix,
-        extra,
-    )
+    if (
+        config["GAS"]["LEVEL"] == "BOTH"
+    ):  # Special case when wanting the gas in bin and spaxel modes
+        save_ppxf_emlines(
+            config,
+            config["GENERAL"]["OUTPUT"],
+            config["GENERAL"]["RUN_ID"],
+            "BIN",
+            linesfitted,
+            gas_flux_in_units,
+            gas_err_flux_in_units,
+            vel_final,
+            vel_err_final,
+            sigma_final_measured,
+            sigma_err_final,
+            chi2,
+            templates_sigma,
+            bestfit,
+            gas_bestfit,
+            stkin,
+            spectra,
+            error,
+            goodPixels_gas,
+            logLam_galaxy,
+            ubins,
+            npix,
+            extra,
+        )
 
- #   if (
- #       config["GAS"]["LEVEL"] == "BOTH"
- #   ):  # Special case when wanting the gas in bin and spaxel modes
- #       save_ppxf_emlines(
- #           config,
- #           config["GENERAL"]["OUTPUT"],
- #           config["GENERAL"]["RUN_ID"],
- #           "BIN",
- #           linesfitted,
- #           gas_flux_in_units,
- #           gas_err_flux_in_units,
- #           vel_final,
- #           vel_err_final,
- #           sigma_final_measured,
- #           sigma_err_final,
- #           chi2,
- #           templates_sigma,
- #           bestfit,
- #           gas_bestfit,
- #           stkin,
- #           spectra,
- #           error,
- #           goodPixels_gas,
- #           logLam_galaxy,
- #           ubins,
- #           npix,
- #           extra,
- #       )
-#
- #       save_ppxf_emlines(
- #           config,
- #           config["GENERAL"]["OUTPUT"],
- #           config["GENERAL"]["RUN_ID"],
- #           "SPAXEL",
- #           linesfitted,
- #           gas_flux_in_units,
- #           gas_err_flux_in_units,
- #           vel_final,
- #           vel_err_final,
- #           sigma_final_measured,
- #           sigma_err_final,
- #           chi2,
- #           templates_sigma,
- #           bestfit,
- #           gas_bestfit,
- #           stkin,
- #           spectra,
- #           error,
- #           goodPixels_gas,
- #           logLam_galaxy,
- #           ubins,
- #           npix,
- #           extra,
- #       )
-
-    # Restart pPPXF if a SPAXEL level run based on a previous BIN level run is intended
-    if config["GAS"]["LEVEL"] == "BOTH" and currentLevel == "BIN":
-        print()
-        performEmissionLineAnalysis(config)
+        save_ppxf_emlines(
+            config,
+            config["GENERAL"]["OUTPUT"],
+            config["GENERAL"]["RUN_ID"],
+            "SPAXEL",
+            linesfitted,
+            gas_flux_in_units,
+            gas_err_flux_in_units,
+            vel_final,
+            vel_err_final,
+            sigma_final_measured,
+            sigma_err_final,
+            chi2,
+            templates_sigma,
+            bestfit,
+            gas_bestfit,
+            stkin,
+            spectra,
+            error,
+            goodPixels_gas,
+            logLam_galaxy,
+            ubins,
+            npix,
+            extra,
+        )
 
     printStatus.updateDone("Emission line fitting done")
     # print("")
