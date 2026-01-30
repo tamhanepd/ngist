@@ -31,7 +31,7 @@ from ngistPipeline.emissionLines.magpiGandalf.cap_mpfit import mpfit
 # ---------------------------------------------------------------------------- #
 # Version 7 of pPXF does not contain the _bvls_solve and nnls_flags functions
 # anymore. However, the current implementation of pyGandALF depends on these
-# functions. In order to assure the compatibility of the nGIST framework with
+# functions. In order to assure the compatibility of the GIST framework with
 # the most recent version of pPXF, we include these two functions from pPXF
 # version 6 below. We are grateful to Michele Cappellari for his permission to
 # include these functions.
@@ -46,11 +46,8 @@ def nnls_flags(A, b, npoly):
 
     """
     m, n = A.shape
-
-    # stack polynomials
     AA = np.hstack([A, -A[:, :npoly]])
     x = optimize.nnls(AA, b)[0]
-
     x[:npoly] -= x[n:]
     return x[:n]
 
@@ -64,7 +61,7 @@ def _bvls_solve(A, b, npoly):
     elif n == npoly + 1:  # Fitting a single template
         soluz = linalg.lstsq(A, b)[0]
     else:  # Fitting multiple templates
-        soluz = nnls_flags(A, b, 0)
+        soluz = nnls_flags(A, b, npoly)
     return soluz
 
 
@@ -548,8 +545,7 @@ def set_constraints(
     if mdegree >= 1:
         for iindx in range(n_pars - mdegree, len(parinfo)):
             parinfo[iindx]["limits"] = [-1.0, 1.0]
-            # parinfo[iindx]['step'] = 1e-3
-            parinfo[iindx]["step"] = 0
+            parinfo[iindx]["step"] = 1e-3
     # iii) and for the reddening parameters (if needed). These will follow the
     # emission-line parameters in the parameter array.
     if reddening is not None:
@@ -858,7 +854,7 @@ def BVLSN_Solve_pxf(AA, bb, degree, nlines):
     AA = np.array(AA, dtype=np.float64)
     bb = np.array(bb, dtype=np.float64)
 
-    soluz = _bvls_solve(AA, bb, degree)
+    soluz = _bvls_solve(AA, bb, 0)
     return soluz
 
 
@@ -1119,7 +1115,6 @@ def fitfunc_gas(pars, **kwargs):
     mpoly = 1.0  # The loop below can be null if mdegree < 1
     for j in range(1, mdegree + 1):
         mpoly += sp_s.legendre(j)(x) * pars[npars + j - 1]
-
     # Emission Lines as given by the values in pars
     # passing only the emission-line parameters
     s = cstar.ndim
@@ -1384,9 +1379,9 @@ def gandalf(
     #    assert isinstance(velscale_ratio, int), \
     #      "VELSCALE_RATIO must be an integer"
     #    npix_temp -= npix_temp % velscale_ratio
-    #    # Make size multiple of velscale_ratio
+    #      # Make size multiple of velscale_ratio
     #    templates = templates[:,npix_temp]
-    #    # This is the size after rebin()
+    #      # This is the size after rebin()
     #    npix_temp //= velscale_ratio
     #    factor = velscale_ratio
     #
@@ -1492,8 +1487,7 @@ def gandalf(
     # arguments to be passed to MPFIT
 
     # step over starting guesses to stabilise output
-    steps = [0.0, -3.0, 3.0]
-
+    steps = [0.0, -3 * velscale, 3 * velscale]
     store_min_res = np.zeros(len(steps))
     store_pars = []
     for ii, step in enumerate(steps):
@@ -1504,7 +1498,6 @@ def gandalf(
             # current emission-line index in the input setup structure
             # to deal with log10-lambda rebinned data, instead of ln-lambda
             istart_pars[h + 0] += step
-
             h = h + 2
 
         parinfo_2, functargs_2 = set_constraints(
@@ -1537,99 +1530,82 @@ def gandalf(
         # Note that we evalutate also the errors on the best parameters, but
         # as regards the position and width of the lines these should only be
         # considered as lower estimates for the real uncertainties.
-        try:
-            mpfit_out = mpfit(
-                fitfunc_gas,
-                xall=istart_pars,
-                functkw=functargs_2,
-                parinfo=parinfo_2,
-                ftol=1e-5,
-                quiet=1,
-            )
-        except:
-            store_pars.append(
-                (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
-            )
-            store_min_res[ii] = np.inf
+        mpfit_out = mpfit(
+            fitfunc_gas,
+            xall=istart_pars,
+            functkw=functargs_2,
+            parinfo=parinfo_2,
+            ftol=1e-5,
+            quiet=1,
+        )
+        status = mpfit_out.status
+        ncalls = mpfit_out.nfev
+        errors = mpfit_out.perror
+        errmsg = mpfit_out.errmsg
+        best_pars = mpfit_out.params
+        # ------------------------------------
+        # Call again FITFUNC_GAS with the best paramenters, not only to
+        # compute the final fit residuals and hence assess the quality of the
+        # fit, but also to retrieve:
+        # the best fitting template weights   (WEIGHTS)
+        # the best fitting overall model      (BESTFIT)
+        # the best fitting emission templates (EMISSION_TEMPLATES)
+        bestfit = []
+        weights = []
+        emission_templates = []
+        st, resid = fitfunc_gas(
+            best_pars,
+            cstar=cstar,
+            galaxy=galaxy,
+            noise=noise,
+            kinstars=kinstars,
+            velscale=velscale,
+            degree=degree,
+            mdegree=mdegree,
+            goodpixels=goodpixels,
+            bestfit=bestfit,
+            weights=weights,
+            emission_setup=emission_setup,
+            l0_gal=l0_gal,
+            lstep_gal=lstep_gal,
+            emission_templates=emission_templates,
+            int_disp=int_disp,
+            log10=log10,
+            reddening=reddening,
+            l0_templ=l0_templ,
+        )
+        bestfit = np.array(bestfit)
+        weights = np.array(weights)
+        emission_templates = np.array(emission_templates)
+        chi2 = 0
+        if sum(noise) == len(galaxy):
+            # If you have input as errors on the fluxes an array of constant unity vales
+            # compute Chi^2/DOF and use this instead of bestnorm/dof to rescale the formal uncertainties
+            chi2 = robust_sigma(resid, zero=True) ** 2
+            errors = errors * np.sqrt(chi2)
+        # ------------------------------------
+        # Add up the best-fitting emission templates to get the emission spectrum
+        if len(emission_templates) == 1:
+            emission = emission_templates[0]
+        elif len(emission_templates) > 1:
+            emission = np.sum(emission_templates, axis=0)
         else:
-            status = mpfit_out.status
-            ncalls = mpfit_out.nfev
-            errors = mpfit_out.perror
-            errmsg = mpfit_out.errmsg
-            best_pars = mpfit_out.params
-            fnorm = mpfit_out.fnorm
+            err_msg_exit("Wrong size of emission templates")
 
-            # ------------------------------------
-            # Call again FITFUNC_GAS with the best paramenters, not only to
-            # compute the final fit residuals and hence assess the quality of the
-            # fit, but also to retrieve:
-            # the best fitting template weights   (WEIGHTS)
-            # the best fitting overall model      (BESTFIT)
-            # the best fitting emission templates (EMISSION_TEMPLATES)
-            bestfit = []
-            weights = []
-            emission_templates = []
-            st, resid = fitfunc_gas(
+        store_pars.append(
+            (
+                status,
+                ncalls,
+                errors,
+                errmsg,
                 best_pars,
-                cstar=cstar,
-                galaxy=galaxy,
-                noise=noise,
-                kinstars=kinstars,
-                velscale=velscale,
-                degree=degree,
-                mdegree=mdegree,
-                goodpixels=goodpixels,
-                bestfit=bestfit,
-                weights=weights,
-                emission_setup=emission_setup,
-                l0_gal=l0_gal,
-                lstep_gal=lstep_gal,
-                emission_templates=emission_templates,
-                int_disp=int_disp,
-                log10=log10,
-                reddening=reddening,
-                l0_templ=l0_templ,
+                bestfit,
+                weights,
+                emission_templates,
             )
-            bestfit = np.array(bestfit)
-            weights = np.array(weights)
-            emission_templates = np.array(emission_templates)
-            chi2 = 0
-            if sum(noise) == len(galaxy):
-                # If you have input as errors on the fluxes an array of constant unity vales
-                # compute Chi^2/DOF and use this instead of bestnorm/dof to rescale the formal uncertainties
-                chi2 = robust_sigma(resid, zero=True) ** 2
-                errors = errors * np.sqrt(chi2)
-            else:
-                chi2 = copy.deepcopy(fnorm)
-                errors = errors * np.sqrt(fnorm / (len(galaxy) - len(best_pars)))
-
-            # ------------------------------------
-            # Add up the best-fitting emission templates to get the emission spectrum
-            if len(emission_templates) == 1:
-                emission = emission_templates[0]
-            elif len(emission_templates) > 1:
-                emission = np.sum(emission_templates, axis=0)
-            else:
-                err_msg_exit("Wrong size of emission templates")
-
-            store_pars.append(
-                (
-                    status,
-                    ncalls,
-                    errors,
-                    errmsg,
-                    best_pars,
-                    bestfit,
-                    weights,
-                    emission_templates,
-                )
-            )
-            store_min_res[ii] = chi2
-
-    if np.all(np.isnan(store_min_res)):
-        raise ValueError
-    else:
-        best_res = np.nanargmin(store_min_res)
+        )
+        store_min_res[ii] = chi2
+    best_res = np.argmin(store_min_res)
 
     (
         status,
@@ -1665,6 +1641,9 @@ def gandalf(
     if mdegree != 0:
         sol = np.append(sol, best_pars[len(best_pars) - mdegree : len(best_pars)])
 
+    # this shouldn't be required, but make a deep copy of the solution to keep it safe.
+    sol_safe = copy.deepcopy(sol)
+
     # Show the fit if requested
     if plot and not for_errors:
         show_fit(
@@ -1687,6 +1666,11 @@ def gandalf(
     # ------------------------------------
     # JTM: this is where all the changes happen, fitting MC realisations of the best fit template
     # ------------------------------------
+    # Properly compute error estimates on all emission-line parameters, by
+    # solving non-linearly also for the line amplitudes with MPFIT, not
+    # only for the line positions and widths, as done previously. BVLS
+    # will now deal only with the weight of the stellar templates. We will
+    # start such new fit from the previous solution.
 
     if for_errors == 1:
         nmc = 50
@@ -1757,11 +1741,7 @@ def gandalf(
 
         # for each MC iteration, generate a new galaxy spectrum based on the bestfit and shuffled residuals
         base_resid = copy.deepcopy(resid)  # NB: these residuals are error normalised!
-        mc_iter = 0
-        niter = 0
-        while (
-            mc_iter < nmc and niter < 2 * nmc
-        ):  # cap the number of possible runs to avoid getting stuck
+        for mc_iter in range(nmc):
             np.random.shuffle(base_resid)  # shuffle the residuals!
 
             # generate a mock galaxy with residual properties matching the observed ata
@@ -1770,6 +1750,9 @@ def gandalf(
                 base_resid * noise[goodpixels]
             )  # rescale residuals by the (unshuffled) noise.
 
+            # paranoid nan/inf catching
+            igalaxy[np.isnan(igalaxy) | ~np.isfinite(igalaxy)] = 0.0
+
             # update the galaxy spectrum in functargs. No need to redo the full setup, just replace in dict.
             ifunctargs["galaxy"] = igalaxy
 
@@ -1777,85 +1760,83 @@ def gandalf(
             # Re-run MPFIT starting from previous solution and using now the
             # FOR_ERRORS keyword to specify that we solve non-linearly also for
             # the amplitudes, and not only for the line position and width.
-            try:
-                mpfit_out = mpfit(
-                    fitfunc_gas,
-                    xall=start_pars,
-                    functkw=ifunctargs,
-                    parinfo=iparinfo,
-                    ftol=1e-5,
-                    quiet=1,
-                )
-            except:
-                eout_all[mc_iter, :] = np.nan
-                niter += 1
-            else:
-                status_2 = mpfit_out.status
-                ncalls_2 = mpfit_out.nfev
-                errors_2 = mpfit_out.perror
-                best_pars_2 = mpfit_out.params
-                # -----------------
-                # Re-evaluate the fit residuals to re-assess the fit quality and
-                # rescale the errors. The last MPFIT fit should have always
-                # converged to the input best solution Also, the weights here are
-                # set to unity for the emission-line templates, as their amplitude
-                # is determined by MPFIT.
-                bestfit_2 = []
-                weights_2 = []
-                emission_templates_2 = []
-                st, resid_2 = fitfunc_gas(
-                    best_pars_2,
-                    cstar=cstar,
-                    galaxy=igalaxy,
-                    noise=noise,
-                    kinstars=kinstars,
-                    velscale=velscale,
-                    degree=degree,
-                    mdegree=mdegree,
-                    goodpixels=goodpixels,
-                    bestfit=bestfit_2,
-                    weights=weights_2,
-                    emission_setup=emission_setup,
-                    l0_gal=l0_gal,
-                    lstep_gal=lstep_gal,
-                    emission_templates=emission_templates_2,
-                    int_disp=int_disp,
-                    log10=log10,
-                    reddening=reddening,
-                    l0_templ=l0_templ,
-                )
-                bestfit_2 = np.array(bestfit_2)
-                weights_2 = np.array(weights_2)
-                emission_templates_2 = np.array(emission_templates)
 
-                # -----------------
-                # Rearrange the final results in the output array SOL, which
-                # includes also line fluxes. This time evaluate also the errors on
-                # these last values, using for now a simple MC error propagation
-                sol_2, _ = rearrange_results(
-                    best_pars_2,
-                    weights_2,
-                    l0_gal,
-                    lstep_gal,
-                    velscale,
-                    emission_setup,
-                    int_disp,
-                    log10,
-                    reddening,
-                    errors_2,
-                )
-                eout_all[mc_iter, :] = sol_2
-                mc_iter += 1
-                niter += 1
+            mpfit_out = mpfit(
+                fitfunc_gas,
+                xall=start_pars,
+                functkw=ifunctargs,
+                parinfo=iparinfo,
+                ftol=1e-5,
+                quiet=1,
+            )
+            status_2 = mpfit_out.status
+            ncalls_2 = mpfit_out.nfev
+            errors_2 = mpfit_out.perror
+            best_pars_2 = mpfit_out.params
+            # -----------------
+            # Re-evaluate the fit residuals to re-assess the fit quality and
+            # rescale the errors. The last MPFIT fit should have always
+            # converged to the input best solution Also, the weights here are
+            # set to unity for the emission-line templates, as their amplitude
+            # is determined by MPFIT.
+            bestfit_2 = []
+            weights_2 = []
+            emission_templates_2 = []
 
-        # in case this runs up against the iteration limit, crop out empty entries
-        # uncertainty calculation
-        eout_all = eout_all[:mc_iter, :]
+            st, resid_2 = fitfunc_gas(
+                best_pars_2,
+                cstar=cstar,
+                galaxy=igalaxy,
+                noise=noise,
+                kinstars=kinstars,
+                velscale=velscale,
+                degree=degree,
+                mdegree=mdegree,
+                goodpixels=goodpixels,
+                bestfit=bestfit_2,
+                weights=weights_2,
+                emission_setup=emission_setup,
+                l0_gal=l0_gal,
+                lstep_gal=lstep_gal,
+                emission_templates=emission_templates_2,
+                int_disp=int_disp,
+                log10=log10,
+                reddening=reddening,
+                l0_templ=l0_templ,
+            )
+            bestfit_2 = np.array(bestfit_2)
+            weights_2 = np.array(weights_2)
+            emission_templates_2 = np.array(emission_templates)
+
+            # -----------------
+            # Rearrange the final results in the output array SOL, which
+            # includes also line fluxes. This time evaluate also the errors on
+            # these last values, using for now a simple MC error propagation
+
+            sol_2, _ = rearrange_results(
+                best_pars_2,
+                weights_2,
+                l0_gal,
+                lstep_gal,
+                velscale,
+                emission_setup,
+                int_disp,
+                log10,
+                reddening,
+                errors_2,
+            )
+            eout_all[mc_iter, :] = sol_2
+
         esol_2 = np.nanstd(eout_all, axis=0)
 
         # -----------------
-        # update the output error array
+        # Rewrite on the final solution array
         esol = esol_2
+        # best_pars = best_pars_2
+        # bestfit = bestfit_2
+        # emission = emission_2
+        # emission_templates = emission_templates_2
+        # weights = weights_2
         # -----------------
         # Show the fit if requested
         if plot:
@@ -1940,35 +1921,32 @@ def gandalf(
                     sol[l * 4 + 1] / resid_noise,
                 )
             )
+
         if reddening:
-            print("E(B-V) = " + str(sol[nlines * 4]))
-            if len(reddening) == 2:
-                print("E(B-V)_int = " + str(sol[nlines * 4 + 1]))
-        if for_errors:
-            print(
-                " ================================= Errors ================================"
-            )
-            for l, i in enumerate(i_lines):
-                print(
-                    "%8s %12.4f %12.4f %12.4f %12.4f %12.4f"
-                    % (
-                        emission_setup[i].name,
-                        esol[l * 4],
-                        esol[l * 4 + 1],
-                        esol[l * 4 + 2],
-                        esol[l * 4 + 3],
-                        esol[l * 4 + 1] / resid_noise,
-                    )
+            # make the spectrum wavelength array
+            if not log10:
+                ob_lambda = np.exp(
+                    np.arange(len(galaxy), dtype="float") * lstep_gal + l0_gal
                 )
-            if reddening:
-                print("E(B-V) = " + str(esol[nlines * 4]))
-                if len(reddening) == 2:
-                    print("E(B-V)_int = " + str(esol[nlines * 4 + 1]))
-            print("\nRoN = " + str(resid_noise))
+                Vstar = kinstars[0] + (l0_gal - l0_templ) * C
+            else:
+                ob_lambda = 10 ** (
+                    np.arange(len(galaxy), dtype="float") * lstep_gal + l0_gal
+                )
+                Vstar = kinstars[0] + (l0_gal - l0_templ) * C * mt.log(10.0)
+            # receding velocity
+            # total reddening attenuation that was applied to the emission lines
+            # in FITFUNC_GAS
+            reddening_attenuation = dust_calzetti(
+                l0_gal, lstep_gal, len(galaxy), sol[nlines * 4], Vstar, log10
+            )
+            if len(reddening) == 2:
+                print("E(B-V)_int = " + str(esol[nlines * 4 + 1]))
+        print("\nRoN = " + str(resid_noise))
         print("\nfeval = " + str(ncalls))
         print("\n")
     # ------------------------------------
     # Restore the input emission-line setup structure
     emission_setup = emission_setup_in  # dummy
     int_disp = int_disp_in
-    return weights, emission_templates, bestfit, sol, esol
+    return weights, emission_templates, bestfit, sol_safe, esol

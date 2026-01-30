@@ -1,7 +1,6 @@
 import logging
 import os
 
-import extinction
 import numpy as np
 from astropy.io import fits
 from printStatus import printStatus
@@ -27,14 +26,6 @@ def set_debug(cube, xext, yext):
 
     return cube
 
-# ======================================
-# Helper routine from PHANGS DAP
-# ======================================
-def reshape_extintion_curve(extinction_curve, cube):
-    extra_dims = cube.ndim - extinction_curve.ndim
-    new_shape = extinction_curve.shape + (1,) * extra_dims
-    reshaped_extinction_curve = extinction_curve.reshape(new_shape)
-    return reshaped_extinction_curve
 
 # ======================================
 # Routine to load MUSE-cubes
@@ -68,21 +59,6 @@ def readCube(config):
 
     # Getting the wavelength info
     wave = hdr["CRVAL3"] + (np.arange(s[0])) * hdr["CD3_3"]
-
-    # Correct spectra for Galactic extinction (taken from PHANGS DAP)
-    if config["READ_DATA"]["EBmV"] is not None:
-        Rv = 3.1
-        Av = Rv * config["READ_DATA"]["EBmV"]
-        ones = np.ones_like(wave)
-        extinction_curve = extinction.apply(extinction.ccm89(wave, Av, Rv), ones)
-        reshaped_extinction_curve = reshape_extintion_curve(
-            extinction_curve, spec
-        )  # spec may need to be 'data'
-        spec = spec / reshaped_extinction_curve  # spec may need to be data
-        espec = np.power(np.sqrt(espec) / reshaped_extinction_curve, 2) # espec is variance, but noise needs to be extinction corrected
-    else:
-        spec = spec  # Don't do anything to the spectra if no dust value given
-        espec = espec
 
     # Getting the spatial coordinates
     origin = [
@@ -182,22 +158,9 @@ def readCube(config):
         "pixelsize": pixelsize,
     }
 
-    # constrain to one row, or subset of pixels from one row if switch DEBUG is set
-    debug = config["READ_DATA"]["DEBUG"]
-    if debug is False:
-        printStatus.updateDone(
-            "Done reading " + str(len(cube["x"])) + " spectra from the MUSE-WFM cube")
-    elif debug is True:
+    # Constrain cube to one central row if switch DEBUG is set
+    if config["READ_DATA"]["DEBUG"] == True:
         cube = set_debug(cube, s[2], s[1])
-        printStatus.updateDone(
-            "Done reading " + str(len(cube["x"])) + " spectra from the MUSE-WFM cube")
-    elif isinstance(debug, int):
-        # integer debug value
-        cube = set_debug(cube, min(debug, s[2]), s[1])
-        printStatus.updateDone(
-            "Done reading " + str(len(cube["x"])) + " spectra from the MUSE-WFM cube")
-    else:
-        raise ValueError(f"Unsupported DEBUG value: {debug}")
 
     printStatus.updateDone("Reading the MUSE-NFM cube")
     print("             Read " + str(len(cube["x"])) + " spectra!")
