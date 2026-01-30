@@ -1114,7 +1114,8 @@ def performEmissionLineAnalysis(config):
 
     # Calculate the best fitting emission
     emissionSpectrum = np.sum(emission_templates, axis=2)
-    emissionSubtractedBestfit = bestfit - emissionSpectrum
+    # not being used at the moment?
+    #emissionSubtractedBestfit = bestfit - emissionSpectrum
 
     # Save results to file
     save_gandalf(
