@@ -260,9 +260,7 @@ def run_ppxf(
     """
     # printStatus.progressBar(i, nbins, barLength=50)
 
-    dotry=1
-    if dotry==1:
-    #try:
+    try:
         if len(optimal_template_in) > 1:
 
             # Normalise galaxy spectra and noise
@@ -546,8 +544,7 @@ def run_ppxf(
         )
 
     #except Exception as e:
-    #except:
-    else:
+    except:
         # Handle any other type of exception
         #print(f"An error occurred: {e}")
         mc_results_nan = {
