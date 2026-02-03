@@ -6,6 +6,8 @@
 ------------------------------------------------------------------------------------------
 VERSION    DATE          DESCRIPTION
 ------------------------------------------------------------------------------------------
+V7.6.8      2026-02-03 FIXED: Removed small debugging code in SFH
+
 V7.6.7      2026-01-30 FIXED: correct outputs for gas BOTH mode in ppxf_gas_wrapper. 
 		    ADDED: keyword THRESHOLD_METHOD: 'isophote' as default, 'actual', 'smooth'
 		    in spatial masking module.
