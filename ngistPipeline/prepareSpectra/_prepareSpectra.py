@@ -19,7 +19,7 @@ def prepareSpectra_Module(config, cube):
         return None
 
     # Check if outputs are already available
-    # Note that _AllSpectra.fits only needs to exists if config["GAS"]["LEVEL"] == 'SPAXEL'
+    # Note that _all_spectra.fits only needs to exists if config["GAS"]["LEVEL"] == 'SPAXEL'
     outputPrefix = (
         os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + ""
     )

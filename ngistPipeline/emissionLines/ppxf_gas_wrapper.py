@@ -20,10 +20,10 @@ from ngistPipeline.prepareTemplates import (_prepareTemplates,
 # Physical constants
 C = 299792.458  # speed of light in km/s
 
-# def debug_print(msg):
-#     print(msg)  # Goes to terminal
-#     logging.info(msg)  # Goes to log file
-#     sys.stdout.flush()  # Force immediate output
+def debug_print(msg):
+    print(msg)  # Goes to terminal
+    logging.info(msg)  # Goes to log file
+    sys.stdout.flush()  # Force immediate output
 
 """
 PURPOSE:
@@ -626,7 +626,7 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
     if currentLevel == "SPAXEL":
 
         # Open the HDF5 file
-        with h5py.File(os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_AllSpectra.hdf5", 'r') as f:
+        with h5py.File(os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_all_spectra.hdf5", 'r') as f:
             # Read the data from the file
             spectra = f['SPEC'][:]
             error = f['ESPEC'][:]
