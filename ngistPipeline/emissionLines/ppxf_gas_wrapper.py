@@ -558,7 +558,7 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
     # Read data if we run on BIN level
     if currentLevel == "BIN":
         # Open the HDF5 file
-        with h5py.File(os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_BinSpectra.hdf5", 'r') as f:
+        with h5py.File(os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) + "_bin_spectra.hdf5", 'r') as f:
             # Read the data from the file
             spectra = f['SPEC'][:]
             error = f['ESPEC'][:]

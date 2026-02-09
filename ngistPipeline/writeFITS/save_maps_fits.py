@@ -227,12 +227,8 @@ def savefitsmaps_GASmodule(module_id="GAS", outdir="", LEVEL="", AoNThreshold=4)
             "All Y-coordinates are 0.0 or np.nan. Plotting maps will not work without reasonable spatial information!\n"
         )
 
-    if LEVEL == "SPAXEL":
-        results = fits.open(os.path.join(outdir, rootname) + "_gas_spaxel.fits")[
-            1
-        ].data#[~maskedSpaxel]
-    elif LEVEL == "BIN":
-        results = fits.open(os.path.join(outdir, rootname) + "_gas_bin.fits")[1].data
+    if LEVEL in ["SPAXEL", "BIN"]:
+        results = fits.open(os.path.join(outdir, rootname) + "_gas_" + LEVEL + ".fits")[1].data
     elif LEVEL == None:
         print("LEVEL keyword not set!")
 
