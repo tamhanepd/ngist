@@ -152,27 +152,27 @@ def create_sorted_gas_maps(config):
                 "Sorted gas maps by " + sortby + " for level " + config["UMOD"]["LEVEL"]
             )
     else:
-        for level in ["BIN", "SPAXEL"]:
-            inputfits = os.path.join(config["GENERAL"]["OUTPUT"], runname) + "_gas_" + level + "_maps.fits"
+        for config["UMOD"]["LEVEL"] in ["BIN", "SPAXEL"]:
+            inputfits = os.path.join(config["GENERAL"]["OUTPUT"], runname) + "_gas_" + config["UMOD"]["LEVEL"] + "_maps.fits"
             if not os.path.isfile(inputfits):
                 printStatus.warning(
                     "The file "
                     + runname
-                    + "_gas_" + level + "_maps.fits does not exist. Cannot sort gas maps."
+                    + "_gas_" + config["UMOD"]["LEVEL"] + "_maps.fits does not exist. Cannot sort gas maps."
                 )
                 logging.warning(
                     "The file "
                     + runname
-                    + "_gas_" + level + "_maps.fits does not exist. Cannot sort gas maps."
+                    + "_gas_" + config["UMOD"]["LEVEL"] + "_maps.fits does not exist. Cannot sort gas maps."
                 )
                 return None
             else:
                 hdulist = SortGasMaps(inputfits, sortby=sortby)
-                outfits = os.path.join(config["GENERAL"]["OUTPUT"], runname) + "_gas_" + level + "_maps_" + sortby + "Sorted.fits"
+                outfits = os.path.join(config["GENERAL"]["OUTPUT"], runname) + "_gas_" + config["UMOD"]["LEVEL"] + "_maps_" + sortby + "Sorted.fits"
                 hdulist.writeto(outfits, overwrite=True)
                 printStatus.updateDone(
-                    "Sorting gas maps by " + sortby + " for level " + level
+                    "Sorting gas maps by " + sortby + " for level " + config["UMOD"]["LEVEL"]
                 )
                 logging.info(
-                    "Sorted gas maps by " + sortby + " for level " + level
+                    "Sorted gas maps by " + sortby + " for level " + config["UMOD"]["LEVEL"]
                 )
