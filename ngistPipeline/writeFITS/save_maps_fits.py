@@ -285,7 +285,7 @@ def savefitsmaps_GASmodule(module_id="GAS", outdir="", LEVEL="", AoNThreshold=4)
         hdu1.append(image_hdu)
 
     hdu1.writeto(
-        os.path.join(outdir, rootname) + "_" + module_id.lower() + "_" + LEVEL.lower() + "_maps.fits",
+        os.path.join(outdir, rootname) + "_" + module_id.lower() + "_" + LEVEL + "_maps.fits",
         overwrite=True,
     )
     hdu1.close()

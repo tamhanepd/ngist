@@ -77,6 +77,10 @@ def user_Modules(config):
             printStatus.failed(message + " See LOGFILE for further information.")
             logging.critical(message)
             return "SKIP"
+        
+    elif config['UMOD']["METHOD"] == "sort_gas_maps":
+        from ngistPipeline.userModules.sortGasMaps import create_sorted_gas_maps
+        create_sorted_gas_maps(config)
 
     # Return
     return None
