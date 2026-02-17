@@ -25,10 +25,10 @@ def emissionLines_Module(config):
     if config["GAS"]["LEVEL"] == "BIN":
         if (
             config["GENERAL"]["OW_OUTPUT"] == False
-            and os.path.isfile(outPrefix + "_gas_bin.fits") == True
-            and os.path.isfile(outPrefix + "_gas_bestfit_bin.fits") == True
-            and os.path.isfile(outPrefix + "_gas_cleaned_bin.fits") == True
-            and os.path.isfile(outPrefix + "_gas_bin_maps.fits") == True
+            and os.path.isfile(outPrefix + "_gas_BIN.fits") == True
+            and os.path.isfile(outPrefix + "_gas_bestfit_BIN.fits") == True
+            and os.path.isfile(outPrefix + "_gas_cleaned_BIN.fits") == True
+            and os.path.isfile(outPrefix + "_gas_BIN_maps.fits") == True
         ):
             logging.info(
                 "Results of the module are already in the output directory. Module is skipped."
@@ -38,39 +38,39 @@ def emissionLines_Module(config):
     elif config["GAS"]["LEVEL"] == "SPAXEL":
         if (
             config["GENERAL"]["OW_OUTPUT"] == False
-            and os.path.isfile(outPrefix + "_gas_spaxel.fits") == True
-            and os.path.isfile(outPrefix + "_gas_bestfit_spaxel.fits") == True
-            and os.path.isfile(outPrefix + "_gas_cleaned_spaxel.fits") == True
-            and os.path.isfile(outPrefix + "_gas_spaxel_maps.fits") == True
+            and os.path.isfile(outPrefix + "_gas_SPAXEL.fits") == True
+            and os.path.isfile(outPrefix + "_gas_bestfit_SPAXEL.fits") == True
+            and os.path.isfile(outPrefix + "_gas_cleaned_SPAXEL.fits") == True
+            and os.path.isfile(outPrefix + "_gas_SPAXEL_maps.fits") == True
         ):
             logging.info(
                 "Results of the module are already in the output directory. Module is skipped."
             )
             printStatus.done("Results are already available. Module is skipped.")
 
-            #check if AllSpectra.fits exists and if so remove it.
-            AllSpectra_file = (os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) 
-            + "_all_spectra.fits")
-            if os.path.exists(AllSpectra_file):    
-                printStatus.warning(
-                    "Removing the all_spectra.fits file to save space"
-                )
-                os.remove(
-                    AllSpectra_file
-                    )        
+            # #check if AllSpectra.fits exists and if so remove it.
+            # AllSpectra_file = (os.path.join(config["GENERAL"]["OUTPUT"], config["GENERAL"]["RUN_ID"]) 
+            # + "_all_spectra.fits")
+            # if os.path.exists(AllSpectra_file):    
+            #     printStatus.warning(
+            #         "Removing the all_spectra.fits file to save space"
+            #     )
+            #     os.remove(
+            #         AllSpectra_file
+            #         )        
     
             return None
     elif config["GAS"]["LEVEL"] == "BOTH":
         if (
             config["GENERAL"]["OW_OUTPUT"] == False
-            and os.path.isfile(outPrefix + "_gas_bin.fits") == True
-            and os.path.isfile(outPrefix + "_gas_spaxel.fits") == True
-            and os.path.isfile(outPrefix + "_gas_bestfit_bin.fits") == True
-            and os.path.isfile(outPrefix + "_gas_bestfit_spaxel.fits") == True
-            and os.path.isfile(outPrefix + "_gas_cleaned_bin.fits") == True
-            and os.path.isfile(outPrefix + "_gas_cleaned_spaxel.fits") == True
-            and os.path.isfile(outPrefix + "_gas_bin_maps.fits") == True
-            and os.path.isfile(outPrefix + "_gas_spaxel_maps.fits") == True
+            and os.path.isfile(outPrefix + "_gas_BIN.fits") == True
+            and os.path.isfile(outPrefix + "_gas_SPAXEL.fits") == True
+            and os.path.isfile(outPrefix + "_gas_bestfit_BIN.fits") == True
+            and os.path.isfile(outPrefix + "_gas_bestfit_SPAXEL.fits") == True
+            and os.path.isfile(outPrefix + "_gas_cleaned_BIN.fits") == True
+            and os.path.isfile(outPrefix + "_gas_cleaned_SPAXEL.fits") == True
+            and os.path.isfile(outPrefix + "_gas_BIN_maps.fits") == True
+            and os.path.isfile(outPrefix + "_gas_SPAXEL_maps.fits") == True
         ):
             logging.info(
                 "Results of the module are already in the output directory. Module is skipped."
@@ -106,8 +106,8 @@ def emissionLines_Module(config):
     # Execute the chosen emissionLines routine
     try:
         module.performEmissionLineAnalysis(config)
-        #if config["GAS"]["LEVEL"] == "BOTH": # rerun emission line module for the spaxel products
-        #    module.performEmissionLineAnalysis(config)
+        if config["GAS"]["LEVEL"] == "BOTH": # rerun emission line module for the spaxel products
+           module.performEmissionLineAnalysis(config)
         _writeFITS.generateFITS(config, "GAS") #Then move on to saving results as usual
     except Exception as e:
         logging.critical(e, exc_info=True)
