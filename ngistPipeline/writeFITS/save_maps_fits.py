@@ -228,6 +228,8 @@ def savefitsmaps_GASmodule(module_id="GAS", outdir="", LEVEL="", AoNThreshold=4)
         )
 
     if LEVEL in ["SPAXEL", "BIN"]:
+        print("DEBUG: LEVEL is set to {}".format(LEVEL))
+        print("DEBUG: reading results from {}".format(os.path.join(outdir, rootname) + "_gas_" + LEVEL + ".fits"))
         results = fits.open(os.path.join(outdir, rootname) + "_gas_" + LEVEL + ".fits")[1].data
     elif LEVEL == None:
         print("LEVEL keyword not set!")
