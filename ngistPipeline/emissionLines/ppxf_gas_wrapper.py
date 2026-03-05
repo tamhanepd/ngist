@@ -758,7 +758,11 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
     emldb_fitted = emldb[w]
     gas_v_init = []
     gas_sigma_init = []
-    gas_component_type = [i.split("_")[1] for i in gas_names]
+    try:
+        gas_component_type = [i.split("_")[1] for i in gas_names]
+    except IndexError:
+        logging.error("Gas names do not follow expected format 'line_component'. Performing single component fit.")
+        gas_component_type = ["single"] * len(gas_names)
 
     for line_name in gas_names:
         line_idx = np.where(emldb_fitted['name'] == line_name)[0][0]
