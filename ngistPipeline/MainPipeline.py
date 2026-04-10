@@ -12,6 +12,9 @@ import os
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"   # FIX: was missing; pip/conda-forge numpy uses OpenBLAS
+os.environ["BLIS_NUM_THREADS"] = "1"       # FIX: suppress BLIS if present
+
 
 import warnings
 
