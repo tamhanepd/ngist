@@ -1153,8 +1153,6 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
                     gas_names,
                     nbins,
                     ubins,
-                    constr_kinem=constr_kinem,
-                    bounds=bounds
                 )
                 for k in range(len(bin_indices_list))
             ),
