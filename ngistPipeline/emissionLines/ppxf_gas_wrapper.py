@@ -12,7 +12,6 @@ from joblib import Parallel, delayed, dump, load
 from ppxf.ppxf import ppxf
 from printStatus import printStatus
 from tqdm import tqdm
-from tqdm_joblib import tqdm_joblib
 
 try:
     from threadpoolctl import threadpool_limits
@@ -1128,39 +1127,40 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
             "n_jobs":      ncpu,
             "max_nbytes":  max_nbytes,
             "temp_folder": memmap_folder,
-            "mmap_mode":   "r",
+            "mmap_mode":   "c",
             "prefer":      "processes",   # FIX 4: explicit, avoids GIL issues
+            "return_as":   "generator",
         }
-        with tqdm_joblib(tqdm(total=len(bin_indices_list))):
-            ppxf_tmp = list(tqdm(
-                Parallel(**parallel_configs)(
-                    delayed(worker)(
-                        bin_indices_list[k],
-                        start_chunks[k],
-                        fixed_chunks[k],
-                        templates,
-                        spectra,
-                        error,
-                        velscale,
-                        goodPixels_gas,
-                        tpl_comp,
-                        moments,
-                        offset,
-                        emi_mpol_deg,
-                        velscale_ratio,
-                        tied,
-                        gas_comp,
-                        gas_names,
-                        nbins,
-                        ubins,
-                    )
-                    for k in range(len(bin_indices_list))
-                ),
-                total=len(bin_indices_list),
-                desc="Processing chunks",
-                ascii=" #",
-                unit="chunk",
-            ))
+ 
+        ppxf_tmp = list(tqdm(
+            Parallel(**parallel_configs)(
+                delayed(worker)(
+                    bin_indices_list[k],
+                    start_chunks[k],
+                    fixed_chunks[k],
+                    templates,
+                    spectra,
+                    error,
+                    velscale,
+                    goodPixels_gas,
+                    tpl_comp,
+                    moments,
+                    offset,
+                    emi_mpol_deg,
+                    velscale_ratio,
+                    tied,
+                    gas_comp,
+                    gas_names,
+                    nbins,
+                    ubins,
+                )
+                for k in range(len(bin_indices_list))
+            ),
+            total=len(bin_indices_list),
+            desc="Processing chunks",
+            ascii=" #",
+            unit="chunk",
+        ))
         
         # Flatten the results
         ppxf_tmp = [result for chunk_results in ppxf_tmp for result in chunk_results]
