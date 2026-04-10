@@ -13,12 +13,6 @@ from ppxf.ppxf import ppxf
 from printStatus import printStatus
 from tqdm import tqdm
 
-try:
-    from threadpoolctl import threadpool_limits
-    _THREADPOOLCTL_AVAILABLE = True
-except ImportError:
-    _THREADPOOLCTL_AVAILABLE = False
-    
 from ngistPipeline.auxiliary import _auxiliary
 from ngistPipeline.prepareTemplates import (_prepareTemplates,
                                            prepare_gas_templates)
@@ -26,14 +20,6 @@ from ngistPipeline.prepareTemplates import (_prepareTemplates,
 # Physical constants
 C = 299792.458  # speed of light in km/s
 
-
-class _NullCtx:
-    """No-op context manager used as fallback when threadpoolctl is absent."""
-    def __enter__(self): return self
-    def __exit__(self, *args): pass
-
- 
- 
 def debug_print(msg):
     print(msg)  # Goes to terminal
     logging.info(msg)  # Goes to log file
@@ -1068,102 +1054,47 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
         error = load(error_filename_memmap, mmap_mode='r')
 
         # Define a function to encapsulate the work done in the loop
-        def worker(bin_indices, start_chunk, fixed_chunk, templates,
-                   spectra, error, velscale, goodPixels_gas, tpl_comp,
-                   moments, offset, emi_mpol_deg, velscale_ratio, tied,
-                   gas_comp, gas_names, nbins, ubins):
-            # Suppress BLAS thread-pools inside this worker process.
-            _limit = (threadpool_limits(limits=1) if _THREADPOOLCTL_AVAILABLE
-                      else _NullCtx())
+        def worker(chunk, templates):
             results = []
-            with _limit:
-                for local_idx, i in enumerate(bin_indices):
-                    result = run_ppxf(
-                        templates,
-                        spectra[:, i],
-                        error[:, i],
-                        velscale,
-                        start_chunk[local_idx],
-                        goodPixels_gas,
-                        tpl_comp,
-                        moments,
-                        offset,
-                        emi_mpol_deg,
-                        fixed_chunk[local_idx],
-                        velscale_ratio,
-                        tied,
-                        gas_comp,
-                        gas_names,
-                        i,
-                        nbins,
-                        ubins,
-                        constr_kinem=None,
-                        bounds=None
-                    )
-                    results.append(result)
+            for i in chunk:
+                result = run_ppxf(
+                    templates,
+                    spectra[:, i],
+                    error[:, i],
+                    velscale,
+                    start[i],
+                    goodPixels_gas,
+                    tpl_comp,
+                    moments,
+                    offset,
+                    emi_mpol_deg,
+                    fixed[i],
+                    velscale_ratio,
+                    tied,
+                    gas_comp,
+                    gas_names,
+                    i,
+                    nbins,
+                    ubins,
+                    constr_kinem=None,
+                    bounds=None
+                )
+                results.append(result)
             return results
         
         # when trying to fit NGC5044 MUSE WFM spectrum, the emission line fit fails for multiple gas velocity components
         # when used with constraints and bounds. Perhaps it needs better module to guess initial parameters. With only
         # constr_kinem, it fails less frequently. For now, setting both to None both above and below as that seems to run well.
         # Then later the components can be swapped. --- Prathamesh
-        
-        ncpu = config["GENERAL"]["NCPU"]
-        chunk_size = max(1, nbins // ncpu * 10)
-        bin_indices_list = [
-            list(range(i, min(i + chunk_size, nbins)))
-            for i in range(0, nbins, chunk_size)
-        ]
- 
-        # Slice start/fixed per chunk so pickling cost scales with
-        # chunk size, not with total nbins.
-        start_chunks  = [start[idx[0]:idx[-1]+1]  for idx in bin_indices_list]
-        fixed_chunks  = [fixed[idx[0]:idx[-1]+1]  for idx in bin_indices_list]
-
 
         # Use joblib to parallelize the work
         max_nbytes = "1M" # max array size before memory mapping is triggered
-        parallel_configs = {
-            "n_jobs":      ncpu,
-            "max_nbytes":  max_nbytes,
-            "temp_folder": memmap_folder,
-            "mmap_mode":   "c",
-            "prefer":      "processes",   # FIX 4: explicit, avoids GIL issues
-            "return_as":   "generator",
-        }
- 
-        ppxf_tmp = list(tqdm(
-            Parallel(**parallel_configs)(
-                delayed(worker)(
-                    bin_indices_list[k],
-                    start_chunks[k],
-                    fixed_chunks[k],
-                    templates,
-                    spectra,
-                    error,
-                    velscale,
-                    goodPixels_gas,
-                    tpl_comp,
-                    moments,
-                    offset,
-                    emi_mpol_deg,
-                    velscale_ratio,
-                    tied,
-                    gas_comp,
-                    gas_names,
-                    nbins,
-                    ubins,
-                    constr_kinem=constr_kinem,
-                    bounds=bounds
-                )
-                for k in range(len(bin_indices_list))
-            ),
-            total=len(bin_indices_list),
-            desc="Processing chunks",
-            ascii=" #",
-            unit="chunk",
-        ))
-        
+        chunk_size = max(1, nbins // (config["GENERAL"]["NCPU"] * 10))
+        chunks = [range(i, min(i + chunk_size, nbins)) for i in range(0, nbins, chunk_size)]
+        parallel_configs = {"n_jobs": config["GENERAL"]["NCPU"], "max_nbytes": max_nbytes, "temp_folder": memmap_folder, "mmap_mode": "c", "return_as":"generator"}
+        ppxf_tmp = list(tqdm(Parallel(**parallel_configs)(delayed(worker)(chunk, templates) for chunk in chunks),
+                        total=len(chunks), desc="Processing chunks", ascii=" #", unit="chunk"))
+
         # Flatten the results
         ppxf_tmp = [result for chunk_results in ppxf_tmp for result in chunk_results]
 
@@ -1323,65 +1254,60 @@ def performEmissionLineAnalysis(config):  # This is your main emission line fitt
             extra,
         )
 
-    # if (
-    #     config["GAS"]["LEVEL"] == "BOTH"
-    # ):  # Special case when wanting the gas in bin and spaxel modes
-    #     save_ppxf_emlines(
-    #         config,
-    #         config["GENERAL"]["OUTPUT"],
-    #         config["GENERAL"]["RUN_ID"],
-    #         "BIN",
-    #         linesfitted,
-    #         gas_flux_in_units,
-    #         gas_err_flux_in_units,
-    #         vel_final,
-    #         vel_err_final,
-    #         sigma_final_measured,
-    #         sigma_err_final,
-    #         chi2,
-    #         templates_sigma,
-    #         bestfit,
-    #         gas_bestfit,
-    #         stkin,
-    #         spectra,
-    #         error,
-    #         goodPixels_gas,
-    #         logLam_galaxy,
-    #         ubins,
-    #         npix,
-    #         extra,
-    #     )
+    if (
+        config["GAS"]["LEVEL"] == "BOTH"
+    ):  # Special case when wanting the gas in bin and spaxel modes
+        save_ppxf_emlines(
+            config,
+            config["GENERAL"]["OUTPUT"],
+            config["GENERAL"]["RUN_ID"],
+            "BIN",
+            linesfitted,
+            gas_flux_in_units,
+            gas_err_flux_in_units,
+            vel_final,
+            vel_err_final,
+            sigma_final_measured,
+            sigma_err_final,
+            chi2,
+            templates_sigma,
+            bestfit,
+            gas_bestfit,
+            stkin,
+            spectra,
+            error,
+            goodPixels_gas,
+            logLam_galaxy,
+            ubins,
+            npix,
+            extra,
+        )
 
-    #     save_ppxf_emlines(
-    #         config,
-    #         config["GENERAL"]["OUTPUT"],
-    #         config["GENERAL"]["RUN_ID"],
-    #         "SPAXEL",
-    #         linesfitted,
-    #         gas_flux_in_units,
-    #         gas_err_flux_in_units,
-    #         vel_final,
-    #         vel_err_final,
-    #         sigma_final_measured,
-    #         sigma_err_final,
-    #         chi2,
-    #         templates_sigma,
-    #         bestfit,
-    #         gas_bestfit,
-    #         stkin,
-    #         spectra,
-    #         error,
-    #         goodPixels_gas,
-    #         logLam_galaxy,
-    #         ubins,
-    #         npix,
-    #         extra,
-    #     )
-
-    # Restart pPPXF if a SPAXEL level run based on a previous BIN level run is intended
-    if config["GAS"]["LEVEL"] == "BOTH" and currentLevel == "BIN":
-        print()
-        performEmissionLineAnalysis(config)
+        save_ppxf_emlines(
+            config,
+            config["GENERAL"]["OUTPUT"],
+            config["GENERAL"]["RUN_ID"],
+            "SPAXEL",
+            linesfitted,
+            gas_flux_in_units,
+            gas_err_flux_in_units,
+            vel_final,
+            vel_err_final,
+            sigma_final_measured,
+            sigma_err_final,
+            chi2,
+            templates_sigma,
+            bestfit,
+            gas_bestfit,
+            stkin,
+            spectra,
+            error,
+            goodPixels_gas,
+            logLam_galaxy,
+            ubins,
+            npix,
+            extra,
+        )
 
     printStatus.updateDone("Emission line fitting done")
     # print("")

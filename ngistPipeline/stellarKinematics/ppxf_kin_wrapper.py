@@ -16,22 +16,6 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 #import extinction
 
-try:
-    from threadpoolctl import threadpool_limits
-    _THREADPOOLCTL_AVAILABLE = True
-except ImportError:
-    _THREADPOOLCTL_AVAILABLE = False
- 
-from ngistPipeline.auxiliary import _auxiliary
-from ngistPipeline.prepareTemplates import _prepareTemplates
- 
- 
-class _NullCtx:
-    """No-op context manager used as fallback when threadpoolctl is absent."""
-    def __enter__(self): return self
-    def __exit__(self, *args): pass
- 
-
 from ngistPipeline.auxiliary import _auxiliary
 from ngistPipeline.prepareTemplates import _prepareTemplates
 
@@ -959,90 +943,17 @@ def extractStellarKinematics(config):
         noise_filename_memmap = memmap_folder + "/noise_memmap.tmp"
         dump(noise, noise_filename_memmap)
         noise = load(noise_filename_memmap, mmap_mode='r')
-        
-        # FIX: optimal_template_comb is a potentially large numpy array captured
-        # by the old closure. Memory-map it like the other big arrays so workers
-        # share it without re-pickling it per task.
-        opt_tpl_filename_memmap = memmap_folder + "/opt_tpl_memmap.tmp"
-        dump(optimal_template_comb, opt_tpl_filename_memmap)
-        optimal_template_comb = load(opt_tpl_filename_memmap, mmap_mode='r')
 
-        # FIX 1: All arguments passed explicitly — no closure capture.
-        # Each worker only receives the start rows it actually needs.
-        # FIX 2: threadpoolctl suppresses BLAS threads inside the worker.
-        # loky spawns fresh processes that re-initialize their own thread
-        # pools, so env-var suppression in the parent is not enough on its
-        # own — threadpoolctl enforces the limit from within each worker.
-        def worker(bin_indices, start_chunk,
-                   templates, bin_data, noise, optimal_template_comb,
-                   velscale, bias, goodPixels_step0_kin, goodPixels_kin,
-                   kin_mom, kin_adeg, kin_mdeg, kin_doclean,
-                   logLam, offset, velscale_ratio, ntemplates,
-                   nsims, nbins, EBV_init, config, doplot):
-            _limit = (threadpool_limits(limits=1) if _THREADPOOLCTL_AVAILABLE
-                      else _NullCtx())
+        # Define a function to encapsulate the work done in the loop
+        def worker(chunk, templates):
             results = []
-            with _limit:
-                for local_idx, i in enumerate(bin_indices):
-                    result = run_ppxf(
-                        templates,
-                        bin_data[:, i],
-                        noise[:, i],
-                        velscale,
-                        start_chunk[local_idx, :],
-                        bias,
-                        goodPixels_step0_kin,
-                        goodPixels_kin,
-                        kin_mom,
-                        kin_adeg,
-                        kin_mdeg,
-                        kin_doclean,
-                        logLam,
-                        offset,
-                        velscale_ratio,
-                        ntemplates,
-                        nsims,
-                        nbins,
-                        i,
-                        optimal_template_comb,
-                        EBV_init,
-                        config,
-                        doplot,
-                    )
-                    results.append(result)
-            return results
- 
-        # FIX 3: chunk_size was nbins//(NCPU*10) — far too small for typical
-        # bin counts, producing up to 167 tasks for 15 workers and defeating
-        # the point of chunking. One block per worker is the right default.
-        ncpu = config["GENERAL"]["NCPU"]
-        chunk_size = max(1, nbins // ncpu)
-        bin_indices_list = [
-            list(range(i, min(i + chunk_size, nbins)))
-            for i in range(0, nbins, chunk_size)
-        ]
-        start_chunks = [start[idx[0]:idx[-1]+1, :] for idx in bin_indices_list]
- 
-        max_nbytes = "1M"
-        parallel_configs = {
-            "n_jobs":      ncpu,
-            "max_nbytes":  max_nbytes,
-            "temp_folder": memmap_folder,
-            "mmap_mode":   "c",
-            "prefer":      "processes",   # FIX 4: explicit — pPXF doesn't release GIL
-            "return_as":   "generator",
-        }
- 
-        ppxf_tmp = list(tqdm(
-            Parallel(**parallel_configs)(
-                delayed(worker)(
-                    bin_indices_list[k],
-                    start_chunks[k],
+            for i in chunk:
+                result = run_ppxf(
                     templates,
-                    bin_data,
-                    noise,
-                    optimal_template_comb,
+                    bin_data[:, i],
+                    noise[:, i],
                     velscale,
+                    start[i, :],
                     bias,
                     goodPixels_step0_kin,
                     goodPixels_kin,
@@ -1056,18 +967,22 @@ def extractStellarKinematics(config):
                     ntemplates,
                     nsims,
                     nbins,
+                    i,
+                    optimal_template_comb,
                     EBV_init,
                     config,
                     doplot,
                 )
-                for k in range(len(bin_indices_list))
-            ),
-            total=len(bin_indices_list),
-            desc="Processing chunks",
-            ascii=" #",
-            unit="chunk",
-        ))
-        
+                results.append(result)
+            return results
+
+        # Use joblib to parallelize the work
+        max_nbytes = "1M" # max array size before memory mapping is triggered
+        chunk_size = max(1, nbins // ((config["GENERAL"]["NCPU"]) * 10))
+        chunks = [range(i, min(i + chunk_size, nbins)) for i in range(0, nbins, chunk_size)]
+        parallel_configs = {"n_jobs": config["GENERAL"]["NCPU"], "max_nbytes": max_nbytes, "temp_folder": memmap_folder, "mmap_mode": "c", "return_as":"generator"}
+        ppxf_tmp = list(tqdm(Parallel(**parallel_configs)(delayed(worker)(chunk, templates) for chunk in chunks),
+                        total=len(chunks), desc="Processing chunks", ascii=" #", unit="chunk"))
         # Flatten the results
         ppxf_tmp = [result for chunk_results in ppxf_tmp for result in chunk_results]
 
